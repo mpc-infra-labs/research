@@ -10,7 +10,7 @@ Bitcoin and Ethereum use ECDSA. Solana and Cardano use EdDSA. Bitcoin Taproot us
 
 ### The Custody Problem
 
-The largest unsolved operational problem in institutional crypto is key custody. You have a private key worth $500M. Where do you put it?
+The largest unsolved operational problem in institutional crypto is key custody. You have a private key worth \$500M. Where do you put it?
 
 A hardware wallet is fine for personal use. For an exchange or a fund, it is a single point of catastrophic failure — one supply chain attack, one rogue engineer, one physical theft. The cold storage arrangements at Mt. Gox, QuadrigaCX, and a dozen other exchanges demonstrate exactly how this ends.
 
