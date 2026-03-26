@@ -324,7 +324,7 @@ SHA-512 is not linear. That single fact forces a specific architectural decision
 
 EdDSA's private key derivation involves a non-linear step:
 
-$$\text{seed\_bytes} \xrightarrow{\text{SHA-512}} \text{scalar } a \xrightarrow{\text{clamp}} \text{signing key}$$
+$$\text{seed bytes} \xrightarrow{\text{SHA-512}} \text{scalar } a \xrightarrow{\text{clamp}} \text{signing key}$$
 
 To enable additive sharing of the private key $a$, we need:
 
@@ -403,7 +403,7 @@ The signing flow:
 |------|--------|
 | Pre-processing (offline) | Each party generates $(d_i, e_i)$ pairs, publishes $(D_i, E_i)$ commitments |
 | Signing setup | Coordinator assembles commitment list for this session |
-| Binding factor | $\rho_i = \text{hash}(i,\ \text{commitment\_list},\ msg)$ for each signer |
+| Binding factor | $\rho_i = \text{hash}(i,\ \text{commitment list},\ msg)$ for each signer |
 | Aggregate nonce | $R_i = D_i + \rho_i \cdot E_i$;   $R = \sum_i R_i$ |
 | Partial signatures | $S_i = (d_i + e_i \cdot \rho_i) + \lambda_i \cdot a_i \cdot k$,  where $k = \text{hash}(R, A, msg)$ |
 | Aggregation | $S = \sum_i S_i$ |
