@@ -356,11 +356,7 @@ These are not the only ways to do it. They are the two that matter most for intu
 
 > **What to remember:** FROST keeps the nice Schnorr algebra, but moves nonce coordination into a more careful and more efficient protocol.
 
-Up to this point, it is enough to think in simple additive shares. Real threshold schemes generalize that intuition to $t$-of-$n$ signing using Shamir secret sharing, typically combined with verifiable secret sharing during key generation.
-
-That works naturally for Schnorr because the sharing layer is additive and the signature equation is additive too. ECDSA is painful for exactly the opposite reason: multiplication comes back.
-
-Both threshold ECDSA and threshold Schnorr/EdDSA use VSS at the key-distribution layer. The difference is what happens next: in Schnorr-style schemes, additive shares continue to fit the signing equation; in ECDSA, the signing phase still runs into secure cross-party multiplication.
+Up to this point, it is enough to think in simple additive shares. Real threshold schemes generalize that intuition to $t$-of-$n$ signing using Shamir secret sharing, typically combined with verifiable secret sharing during key generation. Both threshold ECDSA and threshold Schnorr/EdDSA use that machinery at the key-distribution layer. The difference is what happens next: in Schnorr-style schemes, the linear sharing layer still matches the linear signing equation; in ECDSA, the signing phase runs back into multiplication.
 
 Commit-and-reveal works, but it costs an extra online round every time you sign. FROST moves most of that work offline. Parties pre-generate nonce material, publish commitments in advance, and then use a binding factor to tie each signer's nonce contribution to the full commitment list and the message.
 
