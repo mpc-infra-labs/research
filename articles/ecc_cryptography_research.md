@@ -21,6 +21,8 @@ This note focuses on ECDSA, Schnorr, and EdDSA for a narrow reason: they are the
 
 ECDSA matters because Bitcoin, Ethereum, and a large share of institutional custody infrastructure still depend on it. Schnorr matters because it is the clean algebraic alternative: once the signature equation becomes additive, threshold signing gets much simpler. EdDSA matters because it is the most important deployed Schnorr-family construction, so it shows what happens when clean algebra meets real implementation choices such as deterministic nonces.
 
+In practice, you usually do not get to choose the base signature scheme freely. The chain chooses it for you. If you custody Bitcoin or Ethereum, you inherit ECDSA. If you build in the Bitcoin Taproot/BIP340 world, you inherit Schnorr, along with higher-level constructions such as MuSig2. If you custody Solana, you inherit Ed25519.
+
 This is not a survey of all digital signature schemes. It is a study of the ones that best explain why some MPC systems are painful, why others are elegant, and why modern custody stacks look the way they do.
 
 ### The Custody Problem
@@ -28,6 +30,8 @@ This is not a survey of all digital signature schemes. It is a study of the ones
 The core operational problem in institutional crypto is not storage. It is custody. A private key can control \$500M. If one machine, one employee, or one recovery procedure can produce a valid signature alone, then your entire security model collapses to that weakest point.
 
 A hardware wallet is fine for an individual. For an exchange, custodian, or treasury operation, it is just a concentrated failure domain. One compromised device, one insider with enough access, one backup flow that looked reasonable on paper, and the funds are gone. Crypto has been relearning the same lesson for a decade: if control reduces to one key, operational mistakes become catastrophic.
+
+This is also where threshold signing diverges from ordinary multisig. Multisig changes what the chain sees: multiple keys, script structure, or explicit signer policy. That is the world of classic Bitcoin script-based multisig and Ethereum/EVM smart-account systems such as Safe. Threshold signing aims for a different outcome. The chain still sees one ordinary public key and one ordinary signature; the distribution of trust happens off-chain.
 
 **MPC threshold signing** changes the shape of the problem. There is still one logical signing key from the chain's point of view, but no single system ever possesses it outright. Signing power is distributed across $n$ parties, and any $t$ of them can jointly authorize a transaction. A compromised server yields one share, not the key. A rogue operator cannot move funds alone. A lost device is survivable as long as the threshold is still met.
 
@@ -351,6 +355,12 @@ These are not the only ways to do it. They are the two that matter most for intu
 #### Strategy B: FROST
 
 > **What to remember:** FROST keeps the nice Schnorr algebra, but moves nonce coordination into a more careful and more efficient protocol.
+
+Up to this point, it is enough to think in simple additive shares. Real threshold schemes generalize that intuition to $t$-of-$n$ signing using Shamir secret sharing, typically combined with verifiable secret sharing during key generation.
+
+That works naturally for Schnorr because the sharing layer is additive and the signature equation is additive too. ECDSA is painful for exactly the opposite reason: multiplication comes back.
+
+Both threshold ECDSA and threshold Schnorr/EdDSA use VSS at the key-distribution layer. The difference is what happens next: in Schnorr-style schemes, additive shares continue to fit the signing equation; in ECDSA, the signing phase still runs into secure cross-party multiplication.
 
 Commit-and-reveal works, but it costs an extra online round every time you sign. FROST moves most of that work offline. Parties pre-generate nonce material, publish commitments in advance, and then use a binding factor to tie each signer's nonce contribution to the full commitment list and the message.
 
