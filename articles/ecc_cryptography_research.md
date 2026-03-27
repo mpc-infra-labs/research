@@ -5,21 +5,31 @@
 
 Every blockchain transaction is, at its core, a math problem. You prove you own an address by producing a signature that only the holder of the corresponding private key could have produced. The network checks the math. If it passes, the transaction executes. If it doesn't, nothing happens. There is no password reset, no customer support line, no bank to call. The signature is the authorization, full stop.
 
-This note is not a general tutorial on elliptic curves, but it also does not assume you're already fluent in ECC notation. The minimum background is small: private keys are scalars, public keys are curve points derived from those scalars, and signature schemes differ in how they combine secrets, nonces, and hashes. Part 1 introduces exactly that much machinery and no more.
+This is not a general tutorial on elliptic curves, but it also does not assume you already speak ECC fluently. The background you need is small: private keys are scalars, public keys are curve points derived from those scalars, and signature schemes differ in how they combine secrets, nonces, and hashes. Part 1 introduces exactly that much machinery and no more.
 
-The taxonomy also matters. There are three signature schemes in this story, not two. **ECDSA** and **Schnorr** are distinct constructions. **EdDSA** is best understood as a concrete Schnorr-family instantiation with specific choices for curve, hash, and nonce derivation. That distinction is what makes the rest of the note coherent: the MPC story is really "ECDSA versus Schnorr-style signatures," with EdDSA as the most important deployed Schnorr variant.
+The taxonomy also matters. There are three signature schemes in this story, not two. **ECDSA** and **Schnorr** are distinct constructions. **EdDSA** is best understood as a concrete Schnorr-family instantiation with specific choices for curve, hash, and nonce derivation. That distinction makes the rest of the note cohere: the MPC story is really "ECDSA versus Schnorr-style signatures," with EdDSA as the most important deployed Schnorr variant.
 
 Bitcoin and Ethereum use ECDSA. Bitcoin Taproot uses Schnorr. Solana and Cardano use EdDSA. These are not arbitrary choices. Each scheme has different mathematical properties that determine whether you can build certain things on top of them — multi-sig aggregation, threshold custody, MPC wallets — without extraordinary complexity.
 
 That is the roadmap of the note. Part 1 starts with a minimal ECC refresher, then walks through ECDSA, Schnorr, and EdDSA in that order. Part 2 shows why ECDSA MPC is hard, why Schnorr keeps reappearing inside those protocols, and why EdDSA inherits Schnorr's nice linearity while introducing its own nonce-coordination problem.
 
+> **How to read this note:** If you only care why threshold ECDSA is painful, read Sections 1.1, 1.2, and 2.1. If you care why Schnorr/EdDSA threshold signing is cleaner, read Sections 1.2, 1.3, and 2.2. If you want the shortest version, jump to Section 2.3 and then come back for the details.
+
+### Why These Schemes
+
+This note focuses on ECDSA, Schnorr, and EdDSA for a narrow reason: they are the signature schemes that matter most to real-world threshold signing.
+
+ECDSA matters because Bitcoin, Ethereum, and a large share of institutional custody infrastructure still depend on it. Schnorr matters because it is the clean algebraic alternative: once the signature equation becomes additive, threshold signing gets much simpler. EdDSA matters because it is the most important deployed Schnorr-family construction, so it shows what happens when clean algebra meets real implementation choices such as deterministic nonces.
+
+This is not a survey of all digital signature schemes. It is a study of the ones that best explain why some MPC systems are painful, why others are elegant, and why modern custody stacks look the way they do.
+
 ### The Custody Problem
 
 The core operational problem in institutional crypto is not storage. It is custody. A private key can control \$500M. If one machine, one employee, or one recovery procedure can produce a valid signature alone, then your entire security model collapses to that weakest point.
 
-A hardware wallet is fine for an individual. For an exchange, custodian, or treasury operation, it is just a concentrated failure domain. One compromised device, one insider with enough access, one backup flow that looked reasonable on paper, and the funds are gone. Crypto has been relearning the same lesson for a decade: when control reduces to one key, operational mistakes become catastrophic.
+A hardware wallet is fine for an individual. For an exchange, custodian, or treasury operation, it is just a concentrated failure domain. One compromised device, one insider with enough access, one backup flow that looked reasonable on paper, and the funds are gone. Crypto has been relearning the same lesson for a decade: if control reduces to one key, operational mistakes become catastrophic.
 
-**MPC threshold signing** changes the shape of the problem. There is still one logical signing key from the chain's point of view, but no single system ever possesses it outright. Instead, signing power is distributed across $n$ parties, and any $t$ of them can jointly authorize a transaction. A compromised server yields one share, not the key. A rogue operator cannot move funds alone. A lost device is survivable as long as the threshold is still met.
+**MPC threshold signing** changes the shape of the problem. There is still one logical signing key from the chain's point of view, but no single system ever possesses it outright. Signing power is distributed across $n$ parties, and any $t$ of them can jointly authorize a transaction. A compromised server yields one share, not the key. A rogue operator cannot move funds alone. A lost device is survivable as long as the threshold is still met.
 
 That is the real appeal of threshold cryptography. It does not make key management disappear. It turns a brittle single-point-of-failure problem into a quorum problem. That is a much better trade.
 
@@ -47,9 +57,11 @@ That is enough for this note. You do not need the full curve equation, coordinat
 
 ### 1.1 ECDSA (Elliptic Curve Digital Signature Algorithm)
 
-ECDSA is the default. Bitcoin used it. Ethereum uses it. Most blockchains deployed before 2020 use it. Understanding its signing equation is not optional — and one specific property in that equation, the $k^{-1}$ inversion, is the root cause of everything hard about ECDSA MPC. We'll come back to that in Part 2.
+> **What to remember:** ECDSA looks manageable until the signing equation introduces $k^{-1}$. That one term is why threshold ECDSA becomes cryptographically expensive.
 
-If this is your first time seeing ECDSA notation, read symbols as follows: lowercase letters ($d, k, z, r, s$) are scalars (numbers mod $n$), uppercase letters ($G, Q, R$) are curve points, and $a \cdot G$ means scalar multiplication on the curve (group addition applied $a$ times; geometrically, the point reached by adding $G$ to itself $a$ times on the curve).
+ECDSA is the default. Bitcoin used it. Ethereum uses it. Most blockchains deployed before 2020 use it. Understanding its signing equation is not optional. One term in that equation, the $k^{-1}$ inversion, is the root cause of everything hard about ECDSA MPC. We'll come back to that in Part 2.
+
+If this is your first time seeing ECDSA notation, read symbols as follows: lowercase letters ($d, k, z, r, s$) are scalars (numbers mod $n$), uppercase letters ($G, Q, R$) are curve points, and $a \cdot G$ means scalar multiplication on the curve.
 
 #### Notation (Quick Scan)
 
@@ -111,7 +123,9 @@ The demo maps scalar relationships onto the unit circle via $T(t) = (\sin t, \co
 
 ### 1.2 Schnorr Signature
 
-Schnorr is simpler than ECDSA. Not because it's less secure — it's provably at least as secure under the same hardness assumptions — but because the math is additive throughout. There's no modular inversion anywhere in the signing equation. That single difference is why EdDSA MPC is tractable and ECDSA MPC requires Paillier homomorphic encryption.
+> **What to remember:** Schnorr fixes the part that hurts in ECDSA. The algebra stays additive from end to end.
+
+Schnorr is simpler than ECDSA. Not because it's less secure — it's provably at least as secure under the same hardness assumptions — but because the math is additive throughout. There's no modular inversion anywhere in the signing equation. That single difference is why EdDSA MPC is tractable and ECDSA MPC usually needs extra secure-multiplication machinery such as Paillier- or OT-based MtA.
 
 #### Notation (Quick Scan)
 
@@ -156,7 +170,11 @@ No division. No inversion. Everything adds. The verifier recomputes $k$ from pub
 
 ### 1.3 EdDSA (Edwards-curve Digital Signature Algorithm)
 
-EdDSA is Schnorr made concrete, standardized, and deployed at scale. Schnorr is an abstract framework — it specifies *how* to sign but leaves the curve, the hash, and the nonce derivation up to you. EdDSA answers all three questions and closes the door on implementation variation.
+> **What to remember:** EdDSA is not a third totally unrelated idea. It is a concrete Schnorr-family design whose most consequential choice is deterministic nonce derivation.
+
+EdDSA is Schnorr made concrete, standardized, and deployed at scale. Schnorr is an abstract framework: it specifies *how* to sign but leaves the curve, the hash, and the nonce derivation up to you. EdDSA answers all three questions and closes the door on implementation variation.
+
+For readability, this section uses the schematic Schnorr-like form $S = r + k \cdot a$ and $S \cdot G = R + k \cdot A$. Actual RFC 8032 instantiations such as Ed25519 add hashing, encoding, and cofactor-handling details around that core algebra.
 
 #### Notation (Quick Scan)
 
@@ -168,7 +186,7 @@ Keypair:
 - $A = a \cdot G$: public key point
 
 Per-signature quantities:
-- $r = \text{hash}(\text{seed}_{R} \| msg)$: deterministic nonce scalar
+- $r = \text{hash}(\text{prefix} \| msg)$: deterministic nonce scalar (schematic RFC 8032 form)
 - $R = r \cdot G$: nonce point
 - $k = \text{hash}(R, A, msg)$: challenge scalar
 
@@ -181,23 +199,23 @@ Signature output:
 
 <img src="./assets/eddsa_demo.gif" alt="EdDSA interactive demo" width="640" />
 
-This demo visualizes the Ed25519 verification equation $S \cdot G = R + k \cdot A$.
+This demo visualizes the schematic Ed25519 verification relation $S \cdot G = R + k \cdot A$.
 
 The purple curve is a Twisted Edwards curve. The green point is the public key term $A$, the blue point is the nonce point $R$, the red point is $R + k \cdot A$, and the black point is the verification-side check $S \cdot G$.
 
 In the demo, $k$ is fixed to $1$ for clarity. Drag the private scalar and nonce sliders to watch both sides move together. This is a geometric proxy, not literal Ed25519 field arithmetic.
 
-EdDSA (designed by Bernstein et al.) is a signature scheme **mathematically equivalent to Schnorr** but defined independently. It makes three concrete choices that Schnorr leaves open:
+EdDSA (designed by Bernstein et al.) is a concrete Schnorr-family signature design. It makes three concrete choices that abstract Schnorr leaves open:
 
 | Aspect | Schnorr (abstract) | EdDSA (concrete) |
 |--------|--------------------|-----------------|
-| Curve | Unspecified | Twisted Edwards curve (e.g., Curve25519) |
+| Curve | Unspecified | Twisted Edwards curve (e.g., edwards25519) |
 | Hash | Unspecified | SHA-512 |
-| Nonce | Unspecified | Deterministic: $r = \text{hash}(\text{seed}_{R} \| msg)$ |
+| Nonce | Unspecified | Deterministic from hashed secret material and the message |
 
-The most widely used instantiation is **Ed25519** (EdDSA on Curve25519 with SHA-512).
+The most widely used instantiation is **Ed25519** (EdDSA on edwards25519 with SHA-512). Solana uses Ed25519, which is part of why EdDSA matters in practice rather than only in theory.
 
-The deterministic nonce is the most consequential design decision here. In ECDSA, if you reuse $k$ for two messages, an attacker can recover your private key with trivial arithmetic. EdDSA eliminates this failure mode entirely by deriving $r$ from the private seed and the message — the same inputs always produce the same nonce, and you never have to rely on your random number generator being trustworthy.
+The deterministic nonce is the most consequential design decision here. In ECDSA, if you reuse $k$ for two messages, an attacker can recover your private key with trivial arithmetic. EdDSA removes that failure mode by deriving $r$ from hashed secret material and the message. The same inputs produce the same nonce, so you do not have to trust your RNG.
 
 This is a feature. It also becomes a specific problem in MPC, which we'll address in Section 2.2.
 
@@ -208,11 +226,11 @@ The table below is the whole point of Part 1. Everything else in Part 2 follows 
 
 | Property | ECDSA | Schnorr | EdDSA |
 |----------|-------|---------|-------|
-| Signature equation | $s = k^{-1}(z + rd) \pmod{n}$ | $S = r + k \cdot a$ | $S = r + k \cdot a$ (same as Schnorr) |
+| Signature equation | $s = k^{-1}(z + rd) \pmod{n}$ | $S = r + k \cdot a$ | $S = r + k \cdot a$ (same core algebra, plus EdDSA-specific details) |
 | Linearity | Non-linear ($k^{-1}$ inversion) | Linear (additive) | Linear (additive) |
 | Nonce type | Random | Random | Deterministic |
-| Signature aggregation | Not natively supported | Natively supported | Natively supported |
-| MPC complexity | High (requires Paillier HE) | Low (native additive sharing) | Low (native additive sharing) |
+| Signature aggregation | Awkward | Much more natural | Much more natural |
+| MPC complexity | High (needs extra secure-multiplication machinery) | Low (native additive sharing) | Low (native additive sharing) |
 | Standardization | Bitcoin (legacy), Ethereum | Bitcoin (Taproot, BIP-340) | TLS, SSH, blockchain wallets |
 
 If you're building MPC on ECDSA, you're fighting the $k^{-1}$ all the way down. If you're building on EdDSA, the math cooperates. Part 2 shows exactly what both of those look like.
@@ -220,12 +238,16 @@ If you're building MPC on ECDSA, you're fighting the $k^{-1}$ all the way down. 
 
 ## Part 2: MPC Applications
 
-Part 1 established the math. Part 2 answers the engineering question: how do you make multiple parties jointly compute a signature when no single party holds the complete key?
+> **Reader's note:** this is the dense part. The main question is simple: which parts of the signing equation can parties compute locally, and which parts force extra cryptographic machinery?
 
-The answer is very different depending on which signature scheme you're working with. ECDSA makes this hard in a specific, painful way. Schnorr makes the algebra clean. EdDSA inherits that clean structure, but reintroduces complexity through deterministic nonce handling.
+Part 1 established the math. Part 2 asks the engineering question: how do you make multiple parties jointly compute a signature when no single party holds the complete key?
+
+The answer depends heavily on the signature scheme. ECDSA makes this hard in a specific, painful way. Schnorr makes the algebra clean. EdDSA inherits that clean structure, but reintroduces complexity through deterministic nonce handling.
 
 
 ### 2.1 ECDSA MPC
+
+> **What to remember:** Threshold ECDSA is hard for one reason: the signing equation forces parties to multiply secrets they do not want to reveal.
 
 The details vary across Lindell 2017, GG20, and CGGMP21. The core problem does not. ECDSA introduces a multiplicative dependency that parties cannot evaluate locally, so every practical protocol has to work around that fact.
 
@@ -234,7 +256,7 @@ The details vary across Lindell 2017, GG20, and CGGMP21. The core problem does n
 
 This is the easy part — relatively speaking. Each party generates a random private key shard. Nobody sends their shard to anyone else. The joint public key is computed from the shards' public counterparts and is mathematically indistinguishable from a key generated on a single machine.
 
-The shards are split **multiplicatively** ($x = x_1 \cdot x_2$), not additively. This feels counterintuitive — additive splitting would be simpler. But ECDSA's signing formula requires computing $k^{-1}$, and modular inverses don't compose cleanly under additive splitting. Multiplicative splitting is what makes the math work out downstream.
+In the Lindell 2017 two-party construction used here as an explanatory lens, the shards are split **multiplicatively** ($x = x_1 \cdot x_2$), not additively. This feels counterintuitive. Additive splitting would be simpler. But in this construction ECDSA's signing formula requires computing $k^{-1}$, and modular inverses do not compose cleanly through a naive additive split. Other threshold ECDSA protocols use different share structures, but they run into the same core multiplication problem later.
 
 $x_1$ and $x_2$ are generated by the respective parties $Q$, without any party learning the full private key $x = x_1 \cdot x_2$:
 
@@ -290,9 +312,9 @@ $$(a_1 + a_2)(b_1 + b_2) = a_1 b_1 + a_1 b_2 + a_2 b_1 + a_2 b_2$$
 The cross-terms $a_1 b_2$ and $a_2 b_1$ cannot be computed without one party revealing their value to the other.
 
 
-**The solution: Paillier Additive Homomorphic Encryption + MtA**
+**A Common Solution: Paillier Additive Homomorphic Encryption + MtA**
 
-This is why practical ECDSA MPC protocols introduce MtA. The goal is not to do the whole signature under homomorphic encryption. It is just to convert a secret product into additive shares without revealing the multiplicands.
+This is why practical ECDSA MPC protocols introduce MtA. The goal is not to do the whole signature under homomorphic encryption. It is just to convert a secret product into additive shares without revealing the multiplicands. This section uses the classical Paillier-based version because it is the easiest one to see.
 
 Paillier is useful here because it is additively homomorphic:
 
@@ -310,9 +332,11 @@ Once each cross-term is converted this way, the final signature becomes additive
 
 $$s = \sigma_1 + \sigma_2 \pmod{n}$$
 
-That works. It is also expensive: large Paillier keys, more communication, more proofs, more edge cases, more ways to get the protocol wrong. That is why the ECDSA line of work evolves from Lindell 2017 through GG20 to CGGMP21/24: everyone is fighting the same non-linearity, then hardening the workaround.
+That works. It is also expensive: large Paillier keys, more communication, more proofs, more edge cases, more ways to get the protocol wrong. That is why one major ECDSA line of work evolves from Lindell 2017 through GG20 to CGGMP21/24: everyone is fighting the same non-linearity, then hardening the workaround.
 
 ### 2.2 EdDSA MPC
+
+> **What to remember:** Threshold EdDSA is algebraically much cleaner than threshold ECDSA. The real complication is not the signature equation. It is nonce generation.
 
 Because EdDSA inherits Schnorr's linearity, the MPC construction is structurally much simpler. However, one non-obvious challenge arises from EdDSA's deterministic nonce design.
 
@@ -336,14 +360,16 @@ No homomorphic encryption is needed — all operations are simply additions modu
 
 Standard single-device EdDSA (RFC 8032) derives the signing nonce deterministically:
 
-$$r = \text{hash}(\text{seed}_R \| msg), \qquad R = r \cdot G$$
+$$r = \text{hash}(\text{prefix} \| msg), \qquad R = r \cdot G$$
 
-On one machine, this is a feature. It removes RNG fragility and prevents catastrophic nonce reuse. In MPC, the complete seed is never reconstructed anywhere. That is the whole point of threshold custody. So nobody can evaluate the standard deterministic nonce function directly.
+On one machine, this is a feature. It removes RNG fragility and prevents catastrophic nonce reuse. In MPC, the complete secret material is never reconstructed anywhere. That is the whole point of threshold custody. So nobody can evaluate the standard deterministic nonce function directly.
 
-This creates the main practical wrinkle in EdDSA MPC. The signature equation is linear, but the standard nonce derivation is not threshold-friendly. Real protocols therefore replace single-device determinism with coordinated randomness: commit-and-reveal in simpler constructions, or FROST-style preprocessed nonces in faster ones.
+This creates the main practical wrinkle in EdDSA MPC. The signature equation is linear, but the standard nonce derivation is not threshold-friendly. Real protocols replace single-device determinism with coordinated randomness: commit-and-reveal in simpler constructions, or FROST-style preprocessed nonces in faster ones.
 
 
 #### Strategy A: Commit-and-Reveal
+
+> **What to remember:** once deterministic nonce generation disappears, the first job is preventing anyone from choosing their nonce contribution after seeing everyone else's.
 
 The first fix is simple: if parties must use fresh randomness, make sure nobody can wait, see everyone else's nonce point, and then choose theirs last.
 
@@ -360,6 +386,8 @@ That removes the last-actor advantage. A stronger variant also attaches a Schnor
 
 #### Strategy B: FROST
 
+> **What to remember:** FROST keeps the nice Schnorr algebra, but moves nonce coordination into a more careful and more efficient protocol.
+
 Commit-and-reveal works, but it costs an extra online round every time you sign. FROST moves most of that work offline. Parties pre-generate nonce material, publish commitments in advance, and then use a binding factor to tie each signer's nonce contribution to the full commitment list and the message.
 
 Each signer has nonce commitments $(D_i, E_i)$ and computes:
@@ -372,6 +400,8 @@ The point is not the notation. The point is that nonce selection is now bound to
 
 
 #### Implementation Note: Two Sets of Shares
+
+> **What to remember:** this is an implementation consequence of Ed25519 key derivation, not the main conceptual obstacle in threshold signing.
 
 SHA-512 is not linear. That single fact forces a specific architectural decision in EdDSA MPC.
 
@@ -399,187 +429,48 @@ The solution is to maintain two separate sets of shares — one for the seed (us
 
 ### 2.3 Bottom Line
 
-The contrast is now simple. ECDSA fights you at the algebra level, so threshold ECDSA needs heavy machinery just to evaluate the signing equation safely. Schnorr-style signatures cooperate algebraically, so threshold signing is much cleaner. EdDSA inherits that benefit, but gives back some complexity at the nonce layer because the standard deterministic construction does not survive distribution across parties.
+The contrast is simple. ECDSA fights you at the algebra level, so threshold ECDSA needs heavy machinery just to evaluate the signing equation safely. Schnorr-style signatures cooperate algebraically, so threshold signing is much cleaner. EdDSA inherits that benefit, but gives back some complexity at the nonce layer because the standard deterministic construction does not survive distribution across parties.
 
-That is why the modern protocol landscape looks the way it does. Threshold ECDSA is dominated by MtA-, Paillier-, and proof-heavy constructions such as CGGMP. Threshold Schnorr is dominated by simpler designs such as FROST. Same custody problem. Very different cryptographic ergonomics.
+That is why the modern protocol landscape looks the way it does. Threshold ECDSA commonly ends up in MtA- and proof-heavy constructions, often Paillier-based in the classical lineages leading to systems such as CGGMP. Threshold Schnorr is dominated by simpler designs such as FROST. Same custody problem. Very different cryptographic ergonomics.
 
 
 ## Appendix: Toy Threshold Schnorr Demo (Scalar-Only)
 
-The following TypeScript is not a production EdDSA MPC implementation. It is a toy threshold-Schnorr sketch over scalar arithmetic. That is exactly why it is useful: it makes the additive structure visible without dragging in real curve arithmetic, deterministic nonce replacement, FROST binding factors, or malicious-party protections.
+> **What to remember:** this appendix is here to make the additive structure intuitive, not to stand in for a real production EdDSA MPC implementation.
 
-If you read only one thing from this appendix, it should be this: once the signature equation is additive, threshold signing starts to look mechanically straightforward. The rest of the engineering difficulty comes from making that simple algebra safe in the real world.
+The point is simpler than the code usually makes it look. Once the signature equation is additive, threshold signing reduces to three moves: aggregate nonce points, compute partial signatures locally, then sum them.
 
-```typescript
-import { createHash } from 'crypto';
+```text
+Each signer i holds:
+  private share a_i
+  fresh nonce share r_i
 
-// Simulate Ed25519 group order L
-const L = 7237005577332262213973186563042994240857116359379907606001950938285454250989n;
+Each signer publishes:
+  R_i = r_i * G
 
-function mod(n: bigint, m: bigint = L): bigint {
-    return ((n % m) + m) % m;
-}
+Coordinator aggregates:
+  R = sum(R_i)
+  k = H(R, A, msg)
 
-// Modular inverse via Fermat's Little Theorem: a^(m-2) mod m
-function modInverse(a: bigint, m: bigint = L): bigint {
-    let base = mod(a, m);
-    let exp = m - 2n;
-    let res = 1n;
-    while (exp > 0n) {
-        if (exp % 2n === 1n) res = (res * base) % m;
-        base = (base * base) % m;
-        exp /= 2n;
-    }
-    return res;
-}
+Each signer returns:
+  S_i = r_i + lambda_i * a_i * k
 
-// Mocked EC point: represents P = val * G (demonstrates additive homomorphism)
-// In production, use a proper library such as @noble/ed25519
-class MockPoint {
-    val: bigint;
-    constructor(val: bigint) { this.val = mod(val); }
-    static Base() { return new MockPoint(1n); }
-    add(other: MockPoint): MockPoint { return new MockPoint(this.val + other.val); }
-    mul(scalar: bigint): MockPoint { return new MockPoint(this.val * scalar); }
-    toBuffer(): Buffer {
-        const hex = this.val.toString(16).padStart(64, '0');
-        return Buffer.from(hex, 'hex');
-    }
-}
+Coordinator aggregates:
+  S = sum(S_i)
 
-function hashToScalar(...inputs: (Buffer | bigint)[]): bigint {
-    const hash = createHash('sha512');
-    for (const input of inputs) {
-        if (typeof input === 'bigint') {
-            hash.update(Buffer.from(input.toString(16).padStart(64, '0'), 'hex'));
-        } else {
-            hash.update(input);
-        }
-    }
-    return mod(BigInt('0x' + hash.digest('hex')), L);
-}
-
-class MpcNode {
-    id: number;
-    threshold: number;
-    private secretCoefficients: bigint[] = [];
-    public myShare: bigint | null = null;
-
-    constructor(id: number, threshold: number) {
-        this.id = id;
-        this.threshold = threshold;
-    }
-
-    // DKG Phase 1: each node generates a random polynomial f_i(x) of degree t-1
-    initKeyGen() {
-        this.secretCoefficients = [];
-        for (let i = 0; i < this.threshold; i++) {
-            this.secretCoefficients.push(BigInt(Math.floor(Math.random() * 1000000)));
-        }
-        // In production: broadcast commitments C_k = coeff_k * G for verifiability
-    }
-
-    // Evaluate f_i(peerId) to produce the share sent to that peer
-    getShareFor(peerId: number): bigint {
-        let x = BigInt(peerId);
-        let y = 0n;
-        for (let i = 0; i < this.secretCoefficients.length; i++) {
-            y = (y + this.secretCoefficients[i] * (x ** BigInt(i))) % L;
-        }
-        return y;
-    }
-
-    // DKG Phase 2: sum all received shares to form this node's private key shard
-    receiveShares(shares: bigint[]) {
-        this.myShare = shares.reduce((sum, s) => mod(sum + s), 0n);
-        console.log(`[Node ${this.id}] DKG complete. Shard x_${this.id} = ${this.myShare}`);
-    }
-
-    prepareNonce(): { r_i: bigint; R_i: MockPoint } {
-        const r_i = BigInt(Math.floor(Math.random() * 1000000));
-        return { r_i, R_i: MockPoint.Base().mul(r_i) };
-    }
-
-    // Compute partial signature S_i = (r_i) + k * (lambda_i * x_i)
-    signPart(message: Buffer, globalR: MockPoint, globalPubKey: MockPoint, r_i: bigint, allSignerIds: number[]): bigint {
-        if (this.myShare === null) throw new Error("Key not generated");
-
-        // Lagrange coefficient: lambda_i = product((0 - x_j) / (x_i - x_j)) for j != i
-        let numerator = 1n;
-        let denominator = 1n;
-        const x_i = BigInt(this.id);
-        for (const sid of allSignerIds) {
-            if (sid === this.id) continue;
-            const x_j = BigInt(sid);
-            numerator   = mod(numerator   * (0n - x_j));
-            denominator = mod(denominator * (x_i  - x_j));
-        }
-        const lambda = mod(numerator * modInverse(denominator));
-
-        // Challenge: k = hash(R || A || M)
-        const k = hashToScalar(globalR.toBuffer(), globalPubKey.toBuffer(), message);
-
-        // Partial signature
-        return mod(r_i + k * mod(this.myShare * lambda));
-    }
-}
-
-async function main() {
-    // Setup: 3 nodes, threshold = 2 (any 2 of 3 can sign)
-    const nodes = [new MpcNode(1, 2), new MpcNode(2, 2), new MpcNode(3, 2)];
-
-    // --- DKG ---
-    nodes.forEach(n => n.initKeyGen());
-
-    // Debug: reconstruct full private key (never done in production)
-    let globalPrivKeyDebug = nodes.reduce((sum, n) => mod(sum + n['secretCoefficients'][0]), 0n);
-
-    // Distribute shares
-    nodes.forEach(receiver => {
-        receiver.receiveShares(nodes.map(sender => sender.getShareFor(receiver.id)));
-    });
-
-    const globalPublicKey = MockPoint.Base().mul(globalPrivKeyDebug);
-    console.log(`\n[Global] Public key A: ${globalPublicKey.val}`);
-
-    // --- MPC Signing (Alice = Node 1, Charlie = Node 3) ---
-    const message = Buffer.from("Transfer 100 BTC");
-    const signers = [nodes[0], nodes[2]];
-    const signerIds = signers.map(n => n.id);
-
-    const nonceData = signers.map(n => n.prepareNonce());
-
-    // Aggregate nonce R = R_1 + R_3
-    let globalR = nonceData[0].R_i;
-    for (let i = 1; i < nonceData.length; i++) globalR = globalR.add(nonceData[i].R_i);
-
-    // Partial signatures
-    const partialS = signers.map((node, idx) =>
-        node.signPart(message, globalR, globalPublicKey, nonceData[idx].r_i, signerIds)
-    );
-
-    // Aggregate S = S_1 + S_3
-    const globalS = partialS.reduce((sum, s) => mod(sum + s), 0n);
-    console.log(`\n[Result] Signature: (R=${globalR.val}, S=${globalS})`);
-
-    // --- Verification: S*G == R + k*A ---
-    const lhs = MockPoint.Base().mul(globalS);
-    const k   = hashToScalar(globalR.toBuffer(), globalPublicKey.toBuffer(), message);
-    const rhs = globalR.add(globalPublicKey.mul(k));
-
-    console.log(`LHS (S*G):  ${lhs.val}`);
-    console.log(`RHS (R+kA): ${rhs.val}`);
-    console.log(lhs.val === rhs.val ? "Verification PASSED." : "Verification FAILED.");
-}
-
-main();
+Verification:
+  check S * G == R + k * A
 ```
+
+That pseudocode is the whole intuition. The algebra closes cleanly because the scheme is additive. Real implementations add everything the toy version omits: real Edwards arithmetic, nonce commitments, FROST binding factors, share verification, malicious-party protections, and careful key derivation.
+
+If you want the full toy implementation, link it separately rather than forcing it into the main reading flow.
 
 ---
 
-## References
+## Appendix: References and Implementations
 
-### Papers
+### Papers Worth Reading
 
 [Lindell 2017 — Fast Secure Two-Party ECDSA Signing](https://eprint.iacr.org/2017/552)
 The original practical 2-party ECDSA MPC construction. Introduced MtA with Paillier to handle cross-product terms. Still the clearest exposition of the core problem.
@@ -595,7 +486,7 @@ The ratified standard based on FROST.
 
 ---
 
-### Libraries
+### Production Libraries
 
 [**Taurus multi-party-sig**](https://github.com/taurusgroup/multi-party-sig) — Go — CGGMP21, GG18, FROST
 Audited by Kudelski Security. Coinbase identified a vulnerability in 2024; patched. [Advisory](https://github.com/advisories/GHSA-7f6p-phw2-8253).
