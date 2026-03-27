@@ -129,20 +129,7 @@ Schnorr is simpler than ECDSA. Not because it's less secure — it's provably at
 
 #### Notation (Quick Scan)
 
-Curve constants:
-- $G$: generator/base point (public constant)
-
-Keypair:
-- $a$: private key scalar
-- $A = a \cdot G$: public key point
-
-Per-signature quantities:
-- $r$: random nonce scalar
-- $R = r \cdot G$: nonce point
-- $k = \text{hash}(R, A, msg)$: challenge scalar
-
-Signature output:
-- $(R, S)$ where $S = r + k \cdot a$
+Same convention as above: lowercase letters are scalars, uppercase letters are points. Here the key objects are the private scalar $a$, the public key $A = a \cdot G$, the nonce point $R = r \cdot G$, and the challenge $k = \text{hash}(R, A, msg)$.
 
 #### Signing
 
@@ -178,32 +165,7 @@ For readability, this section uses the schematic Schnorr-like form $S = r + k \c
 
 #### Notation (Quick Scan)
 
-Curve constants:
-- $G$: generator/base point (public constant)
-
-Keypair:
-- $a$: private key scalar
-- $A = a \cdot G$: public key point
-
-Per-signature quantities:
-- $r = \text{hash}(\text{prefix} \| msg)$: deterministic nonce scalar (schematic RFC 8032 form)
-- $R = r \cdot G$: nonce point
-- $k = \text{hash}(R, A, msg)$: challenge scalar
-
-Signature output:
-- $(R, S)$ where $S = r + k \cdot a$
-
-#### Interactive Visualization
-
-[click here to try it yourself](https://www.desmos.com/calculator/mwnb018xh4)
-
-<img src="./assets/eddsa_demo.gif" alt="EdDSA interactive demo" width="640" />
-
-This demo visualizes the schematic Ed25519 verification relation $S \cdot G = R + k \cdot A$.
-
-The purple curve is a Twisted Edwards curve. The green point is the public key term $A$, the blue point is the nonce point $R$, the red point is $R + k \cdot A$, and the black point is the verification-side check $S \cdot G$.
-
-In the demo, $k$ is fixed to $1$ for clarity. Drag the private scalar and nonce sliders to watch both sides move together. This is a geometric proxy, not literal Ed25519 field arithmetic.
+Use the same algebraic objects as Schnorr. The only change that matters here is nonce generation: instead of sampling $r$ randomly, EdDSA derives it deterministically from hashed secret material and the message.
 
 EdDSA (designed by Bernstein et al.) is a concrete Schnorr-family signature design. It makes three concrete choices that abstract Schnorr leaves open:
 
