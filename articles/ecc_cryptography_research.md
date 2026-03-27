@@ -383,6 +383,8 @@ The first fix is simple: if parties must use fresh randomness, make sure nobody 
 
 That removes the last-actor advantage. A stronger variant also attaches a Schnorr proof showing each party actually knows the discrete log behind the revealed $R_i$.
 
+These are not the only ways to do it. They are the two that matter most for intuition: the simplest baseline, and the protocol family that won.
+
 
 #### Strategy B: FROST
 
@@ -399,32 +401,7 @@ $$R_i = D_i + \rho_i \cdot E_i, \qquad R = \sum_i R_i$$
 The point is not the notation. The point is that nonce selection is now bound to the entire signing session, so an attacker cannot game the aggregate $R$ by choosing which preprocessed nonces to combine after seeing partial information.
 
 
-#### Implementation Note: Two Sets of Shares
-
-> **What to remember:** this is an implementation consequence of Ed25519 key derivation, not the main conceptual obstacle in threshold signing.
-
-SHA-512 is not linear. That single fact forces a specific architectural decision in EdDSA MPC.
-
-EdDSA's private key derivation involves a non-linear step:
-
-$$\text{seed bytes} \xrightarrow{\text{SHA-512}} \text{scalar } a \xrightarrow{\text{clamp}} \text{signing key}$$
-
-To enable additive sharing of the private key $a$, we need:
-
-$$a_1 + a_2 = a_{\text{total}}$$
-
-But SHA-512 is **not linear**, so:
-
-$$\text{hash}(\text{seed}_1) + \text{hash}(\text{seed}_2) \neq \text{hash}(\text{seed}_1 + \text{seed}_2)$$
-
-If we split the seed and each party hashes their share independently, the results don't add up to the correct signing key. You get garbage. The signing will fail verification every time.
-
-The solution is to maintain two separate sets of shares — one for the seed (used for backup and key derivation), and one for the post-hash scalar (used for actual signing). They refer to the same key, but they're stored and operated on separately:
-
-| Share Set | What it represents | Why needed |
-|-----------|--------------------|------------|
-| **Seed Shares** | Shares of the raw 32-byte seed | Required for backup, recovery, and key derivation |
-| **Scalar Shares** | Shares of the post-hash scalar $a$ | Required for actual signing (additive, compatible with MPC) |
+> **Implementation note:** Ed25519 key derivation is itself non-linear (`seed -> hash -> clamp -> scalar`), so production MPC systems often distinguish between seed shares for backup/recovery and scalar shares for actual signing. This is real, but it is an implementation consequence of Ed25519 key derivation, not the main conceptual obstacle in threshold signing.
 
 
 ### 2.3 Bottom Line
