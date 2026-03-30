@@ -1,0 +1,1 @@
+compare design choices between relay and p2p model

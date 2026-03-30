@@ -36,6 +36,8 @@ It has three goals:
 - `06-hd-wallets-bip32-and-threshold-signing.md`
 - `07-running-round-based-mpc-over-http.md`
 - `08-bitcoin-script-types-through-threshold-signing.md`
+- `09-hardware-security-in-mpc-tees-sgx-and-nitro-enclaves.md`
+- `10-securing-client-shares-with-mobile-secure-enclaves.md`
 
 ## Philosophy
 

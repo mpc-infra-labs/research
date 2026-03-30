@@ -1,0 +1,1 @@
+how to use one mpc library (Taurus/multi-sig) to support different chains by self implementing curve
