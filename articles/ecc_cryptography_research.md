@@ -98,7 +98,7 @@ That is the fork in the road.
 
 [Interactive demo](https://www.desmos.com/calculator/pxrkkhxcez)
 
-<img src="./assets/ecdsa_demo.gif" alt="ECDSA interactive demo" width="640" />
+<img src="../research_notes/assets/ecdsa_demo.gif" alt="ECDSA interactive demo" width="640" />
 
 This visualization is not a literal secp256k1 plot. It is a visual proxy for the algebra.
 
@@ -179,6 +179,10 @@ That is why threshold EdDSA systems often replace single-device determinism with
 
 - simpler constructions use commit-and-reveal
 - faster constructions use FROST-style nonce preprocessing
+
+<img src="../research_notes/assets/eddsa_demo.gif" alt="EdDSA interactive demo" width="640" />
+
+The same high-level picture is cleaner here: the signature algebra stays additive, so the visual intuition is less about hidden multiplication and more about how distributed nonce contributions and partial signatures combine into one valid result.
 
 So EdDSA is still much friendlier than ECDSA for threshold signing. It just is not completely free of protocol design work.
 
