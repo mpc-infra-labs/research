@@ -12,6 +12,9 @@ It has three goals:
 
 ## Sections
 
+- `research_notes/`
+  - detailed notes optimized for completeness, derivations, and factual precision
+
 - `articles/`
   - publishable research articles and long-form technical writing
 
