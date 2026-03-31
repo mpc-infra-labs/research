@@ -94,16 +94,6 @@ In Schnorr-style signatures, the equation stays additive from end to end.
 
 That is the fork in the road.
 
-## A Visual Intuition
-
-[Interactive demo](https://www.desmos.com/calculator/pxrkkhxcez)
-
-<img src="../research_notes/assets/ecdsa_demo.gif" alt="ECDSA interactive demo" width="640" />
-
-This visualization is not a literal secp256k1 plot. It is a visual proxy for the algebra.
-
-The useful intuition is simple: for a valid signature, the verifier reconstructs the same target implied by the signer's nonce. Once the nonce or message changes, the downstream terms move with it.
-
 ## Why ECDSA Threshold Signing Gets Ugly
 
 Suppose we want multiple parties to sign without ever reconstructing the private key on one machine.
@@ -179,10 +169,6 @@ That is why threshold EdDSA systems often replace single-device determinism with
 
 - simpler constructions use commit-and-reveal
 - faster constructions use FROST-style nonce preprocessing
-
-<img src="../research_notes/assets/eddsa_demo.gif" alt="EdDSA interactive demo" width="640" />
-
-The same high-level picture is cleaner here: the signature algebra stays additive, so the visual intuition is less about hidden multiplication and more about how distributed nonce contributions and partial signatures combine into one valid result.
 
 So EdDSA is still much friendlier than ECDSA for threshold signing. It just is not completely free of protocol design work.
 

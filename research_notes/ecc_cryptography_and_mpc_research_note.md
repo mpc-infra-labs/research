@@ -105,6 +105,14 @@ $$k^{-1}$$
 
 This introduces non-linearity into threshold signing.
 
+### 3.5 Visualization
+
+[Interactive demo](https://www.desmos.com/calculator/pxrkkhxcez)
+
+<img src="./assets/ecdsa_demo.gif" alt="ECDSA interactive demo" width="640" />
+
+The visualization is not a literal secp256k1 plot. It is a visual proxy for the algebraic relation between the nonce point, the reconstructed verification point, and the signature equation.
+
 
 ## 4. Schnorr
 
