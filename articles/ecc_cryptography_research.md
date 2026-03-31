@@ -1,6 +1,6 @@
 # If No One Has the Key, Who Signs?
 
-*MPC wallets promise that no single machine, employee, or breach can move funds alone. The hard part is that the blockchain still expects an ordinary signature, and some signature schemes cooperate with distribution far less than others.*
+*MPC wallets promise distributed trust. Blockchains still demand an ordinary signature. The gap between those two facts is why threshold ECDSA feels so much heavier than Schnorr.*
 
 When a wallet vendor says it uses MPC, what is it actually promising?
 
