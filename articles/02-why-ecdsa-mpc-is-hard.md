@@ -232,4 +232,4 @@ That is why two products can both market themselves as "MPC wallets" while hidin
 - [FROST — Flexible Round-Optimized Schnorr Threshold Signatures](https://eprint.iacr.org/2020/852)
 - [IETF FROST draft](https://datatracker.ietf.org/doc/draft-irtf-cfrg-frost/)
 
-If you want the full derivations, protocol sketches, and implementation notes, I have a longer companion research note that expands the math behind this piece.
+If you want the full derivations, protocol sketches, and implementation notes, the companion research note is here: [ECC, Signature Schemes, and MPC](https://github.com/mpc-infra-labs/research/blob/main/research_notes/ecc_cryptography_and_mpc_research_note.md).
