@@ -1,78 +1,80 @@
-# Why ECDSA Makes MPC Wallets So Painful
+# Why Secure Crypto Wallets Are Harder Than They Look
 
-Most people first hear "MPC wallet" and picture a vague security upgrade: split the key across several machines, require a quorum, and keep any one compromise from becoming catastrophic.
+*The hard part is not splitting a private key. The hard part is producing an ordinary blockchain signature without ever reconstructing that key anywhere.*
 
-That intuition is directionally right. It is also incomplete.
+When a crypto exchange, custodian, or wallet provider says it uses MPC, the promise sounds simple enough: no single machine, employee, or compromised server should be able to move funds alone.
 
-The hard part is not just that multiple parties are involved. The hard part is that blockchains still expect an ordinary signature from an ordinary signature scheme. If the chain expects an ECDSA signature, your distributed system has to jointly produce a valid ECDSA signature without ever reconstructing the private key in one place.
+That sounds like a straightforward engineering problem. Split the key into pieces. Put the pieces on different machines. Require a quorum. Done.
 
-That requirement sounds reasonable until you look at the algebra.
+That is not how it works.
 
-For some signature schemes, threshold signing is almost annoyingly elegant. For others, it becomes a pile of auxiliary cryptography: homomorphic encryption, zero-knowledge proofs, extra preprocessing, more communication rounds, more implementation risk.
+The blockchain does not care how sophisticated your internal security architecture is. It still expects an ordinary signature from an ordinary signature scheme. If the chain expects an ECDSA signature, your distributed system has to jointly produce a valid ECDSA signature without ever reconstructing the private key in one place.
 
-ECDSA is in the second category.
+That is where things stop being simple.
 
-This is the core point of the article:
+This matters even if you never plan to build a custody company. It helps explain why crypto wallet infrastructure is expensive, why some security architectures are much harder to audit than they first appear, and why the same phrase, "MPC wallet," can hide very different amounts of cryptographic machinery underneath.
+
+It also explains why the underlying chain matters so much. Bitcoin and Ethereum force one set of tradeoffs. Schnorr-based systems make a different set of tradeoffs available. Those differences are not branding. They come from the signature math.
+
+That is the core claim of this article:
 
 > Threshold signing is not equally hard across signature schemes. ECDSA is painful because its signing equation is non-linear. Schnorr-style signatures are cleaner because their signing equation stays additive.
 
-If you understand that one distinction, a lot of the MPC landscape starts making sense.
+If you understand that one distinction, a lot of the wallet and custody landscape starts looking much less arbitrary.
 
-## The Real Custody Problem
+## What MPC Is Actually Trying To Do
 
-Institutional crypto custody is not fundamentally a storage problem. It is an authorization problem.
+The simplest way to think about wallet security is still the wrong one.
 
-A private key can control an enormous amount of value. If one laptop, one HSM, one operator, or one recovery flow can produce a valid signature alone, then your entire security model collapses to that single point of failure.
+Most people imagine key management as a storage problem: where is the private key kept, and how do you keep someone from stealing it?
 
-That is why threshold signing exists.
+For serious custody systems, the problem is better described as an authorization problem. A private key can control an enormous amount of value. If one device, one admin, or one fallback process can produce a valid signature alone, then the real security boundary is just that weakest point.
 
-From the blockchain's point of view, nothing exotic happens. The chain still sees one public key and one valid signature. But behind the scenes, signing power is distributed across multiple parties, and no one party ever holds the complete signing key outright.
+Threshold signing changes that boundary.
+
+From the chain's point of view, there is still one public key and one valid signature. But behind the scenes, signing power is distributed across multiple parties, and no one party ever holds the complete signing key outright.
 
 That is different from ordinary multisig.
 
-Multisig changes what the chain sees. Threshold signing does not. Threshold signing keeps the external interface looking like a normal wallet while moving the trust distribution off-chain.
+Multisig changes what the chain sees. It exposes multiple keys, explicit script structure, or explicit policy logic on-chain. Threshold signing tries to preserve the external appearance of an ordinary wallet while distributing trust off-chain.
 
-This is extremely attractive for exchanges, custodians, treasury systems, and any infrastructure stack that wants:
+Why does that matter to a normal reader?
 
-- quorum-based control instead of single-device control
-- survivability if one signer or one machine disappears
-- reduced blast radius if one component is compromised
+Because this is the infrastructure that sits underneath exchanges, custodians, treasury systems, and any product that wants stronger security without turning every transaction into a visibly exotic on-chain construction. If you have ever wondered why some wallet systems are more expensive, slower to ship, harder to audit, or more operationally fragile than others, this is part of the answer.
 
-So far, so good.
+## The One Technical Fact You Need
 
-But then the signature scheme starts to matter.
+We can skip most of elliptic-curve cryptography and keep only the part that matters here.
 
-## The One Bit of ECC You Actually Need
+- A private key is a secret number.
+- A public key is derived from it.
+- A signature scheme specifies how a private key, a message, and a nonce combine to produce a valid signature.
 
-We can skip almost all of elliptic-curve cryptography and keep only the part that matters here.
+For threshold signing, that last point is the whole story.
 
-- A private key is a scalar, usually written as `d`.
-- A public key is a curve point derived from it: `Q = d * G`.
-- Signature schemes differ in how they combine the private key, a message hash, and a nonce.
-
-For threshold signing, that last bullet is the whole story.
-
-If the signature equation is additive, parties can usually hold additive shares and combine local work cleanly.
+If the signature equation is additive, parties can often hold additive shares and combine their local work cleanly.
 
 If the signature equation forces multiplication across secrets held by different parties, life gets worse quickly.
 
-## Three Signature Families, Three Very Different Ergonomics
+That is the difference between "this is an elegant protocol" and "this is a large cryptographic engineering project."
+
+## The Signature Scheme Choice Is Not Cosmetic
 
 For custody infrastructure, three schemes matter most:
 
 - `ECDSA`, because Bitcoin and Ethereum still depend on it
-- `Schnorr`, because it is the clean algebraic alternative and powers modern Bitcoin threshold constructions
-- `EdDSA`, because it is the most important deployed Schnorr-family design, especially via Ed25519
+- `Schnorr`, because it is the cleaner algebraic alternative
+- `EdDSA`, because it is the most important deployed Schnorr-family construction, especially through Ed25519
 
-The useful mental model is not "three unrelated schemes."
+The useful mental model is not that these are three equally different signature schemes.
 
-It is this:
+The useful mental model is this:
 
 - `ECDSA` is the awkward one for MPC
 - `Schnorr` is the clean one
 - `EdDSA` mostly inherits Schnorr's clean structure, but adds a nonce-coordination wrinkle
 
-Here are the core signing equations:
+The equations make the contrast visible immediately.
 
 ECDSA:
 
@@ -86,51 +88,53 @@ EdDSA:
 
 $$S = r + c a$$
 
-That single visual contrast explains far more than it first appears to.
+If you do not care about the notation, that is fine. The only part worth staring at is the ECDSA inverse:
 
-In ECDSA, there is an inversion term, `k^{-1}`.
+$$k^{-1}$$
 
-In Schnorr-style signatures, the equation stays additive from end to end.
+That one term is the reason threshold ECDSA gets unpleasant.
+
+In Schnorr-style signatures, the algebra stays additive from end to end.
 
 That is the fork in the road.
 
-## Why ECDSA Threshold Signing Gets Ugly
+## Why ECDSA Makes MPC So Heavy
 
-Suppose we want multiple parties to sign without ever reconstructing the private key on one machine.
+At first glance, threshold signing sounds like a secret-sharing problem.
 
-At first glance, that sounds like a straightforward secret-sharing problem. Split the key, have each party do some local math, combine the results, and return a normal signature.
+Take a private key. Split it across several parties. Have each party do its part. Combine the results. Return one valid signature.
 
-That is not what happens with ECDSA.
+That intuition is close enough to be dangerous.
 
-ECDSA signing is:
+ECDSA does not only require secret values. It requires a computation over those secret values that does not naturally decompose across parties.
+
+The signing equation is:
 
 $$s = k^{-1}(z + r d) \pmod{n}$$
 
-The private key `d` is secret. The nonce `k` is also secret. In a threshold setting, different parties hold shares of both.
+The private key `d` is secret. The nonce `k` is secret. In a threshold setting, different parties hold different shares of both.
 
-Now expand the intuition a bit. Even if you distribute the key material, the protocol still has to evaluate a structure that mixes:
+Now look at the shape of the computation:
 
-- the inverse of a secret nonce
-- the message hash
-- the product of the public nonce component `r` and the secret signing key
+- invert a secret nonce
+- mix that with the message hash
+- multiply the public nonce component `r` by the secret signing key
 
-The problem is not only secrecy. The problem is that the computation is not naturally share-friendly.
+The problem is not just secrecy. The problem is that the computation is not naturally share-friendly.
 
-In practical threshold ECDSA protocols, this eventually becomes a secure multiplication problem: parties need to obtain the effect of multiplying secrets they do not want to reveal to one another.
+In practice, threshold ECDSA turns into a secure multiplication problem. Parties need the effect of multiplying secrets they do not want to reveal to one another.
 
-That is where the heavy machinery enters.
+That is why threshold ECDSA protocols accumulate extra machinery:
 
-Classical threshold ECDSA designs use techniques such as:
-
-- Paillier-based additive homomorphic encryption
+- Paillier-based homomorphic encryption
 - MtA, or multiplicative-to-additive conversion
-- zero-knowledge proofs to ensure everyone followed the protocol honestly
+- zero-knowledge proofs and other checks to make sure parties followed the protocol correctly
 
-All of that is there for a reason. It is not ornamental complexity. It is compensating for the fact that ECDSA's algebra does not cooperate with distributed signing.
+None of that is decorative. It is compensation for an algebraic problem.
 
-This is why threshold ECDSA libraries and papers often feel much heavier than outsiders expect. The system is fighting the signature equation the whole time.
+This is why people who work on threshold ECDSA sound slightly haunted. They are not being dramatic. They are describing a protocol family that is fighting the signature equation the whole time.
 
-## Why Schnorr Keeps Showing Up as the "Cleaner" Alternative
+## Why Schnorr Feels Much Cleaner
 
 Now compare that with Schnorr:
 
@@ -140,63 +144,65 @@ Everything important is additive.
 
 If parties hold additive shares of the private key and additive shares of the nonce, they can compute partial signatures locally and add them together. The algebra closes cleanly.
 
-At a high level, threshold Schnorr feels like:
+At a high level, threshold Schnorr looks like this:
 
 1. each signer contributes a nonce point
-2. the coordinator aggregates them into a joint nonce
+2. the coordinator aggregates them
 3. each signer computes a local partial signature
-4. the partial signatures are summed into the final signature
+4. the partial signatures are summed into one final signature
 
-That is why threshold Schnorr protocols like FROST are so much cleaner than threshold ECDSA lineages such as Lindell 2017, GG20, or CGGMP.
+That does not make Schnorr systems trivial. Real systems still need good protocol design, malicious-party protection, careful nonce handling, and solid implementations. But the core signing equation is no longer actively hostile to distribution.
 
-The custody problem is the same. The cryptographic ergonomics are not.
+This is why threshold Schnorr systems such as FROST feel much lighter than threshold ECDSA lineages such as Lindell 2017, GG20, or CGGMP.
+
+Same custody goal. Different cryptographic ergonomics.
 
 ## Where EdDSA Fits
 
-EdDSA is best understood as a concrete Schnorr-family design, not as a third completely separate species.
+EdDSA is best understood as a concrete Schnorr-family design, not as a completely separate species.
 
-Its core signing structure is still Schnorr-like, which is good news for MPC. It inherits the nice additive property that makes threshold signing much easier than under ECDSA.
+That is good news for MPC. Its core signing structure is still Schnorr-like, so it inherits the nice additive property that makes threshold signing much cleaner than under ECDSA.
 
 But EdDSA also standardizes deterministic nonce derivation.
 
-In ordinary single-device Ed25519 signing, that is a feature. You do not depend on a fresh random nonce generator every time, which removes an entire category of catastrophic implementation failures.
+On a single device, that is a feature. It removes an entire class of catastrophic randomness failures.
 
-In MPC, though, deterministic nonce generation becomes awkward.
+In MPC, it becomes awkward. The whole point of threshold signing is that the complete secret material is never reconstructed in one place. So the standard single-device nonce derivation procedure does not carry over directly.
 
-Why? Because the whole point of threshold custody is that the complete secret material is never reconstructed in one place. So the protocol cannot simply evaluate the usual single-device nonce derivation procedure as written.
-
-That is why threshold EdDSA systems often replace single-device determinism with coordinated randomness and session binding:
+That is why threshold EdDSA systems still need careful nonce coordination:
 
 - simpler constructions use commit-and-reveal
-- faster constructions use FROST-style nonce preprocessing
+- faster constructions use FROST-style nonce preprocessing and binding
 
-So EdDSA is still much friendlier than ECDSA for threshold signing. It just is not completely free of protocol design work.
+So EdDSA is much friendlier than ECDSA for threshold signing. It is just not free of protocol design work.
 
-## The Practical Bottom Line
+## Why This Is Worth Caring About
+
+If you are not building custody infrastructure yourself, this can still sound like a niche technical footnote. It is not.
+
+This is part of the reason secure wallet infrastructure is harder, slower, and more expensive than it first appears. It is part of the reason custody vendors talk about presigning, rounds, proof systems, and protocol families instead of just "splitting the key." It is part of the reason chain choice leaks upward into product and security design.
+
+Underneath a lot of crypto UX, there is still a very old and very stubborn fact: the chain only accepts the signature scheme it accepts.
+
+If that scheme is ECDSA, distributed signing is possible, but it comes with real complexity.
+
+If that scheme is Schnorr-style, the math cooperates much more readily.
+
+That is not an implementation detail. It is one of the reasons wallet infrastructure across chains ends up feeling so uneven.
+
+## The Short Version
 
 If you only keep one sentence from this article, keep this one:
 
 > MPC wallets are not hard merely because multiple parties are involved. They are hard or easy depending on whether the underlying signature equation cooperates with distribution.
 
-That gives you a much better map of the space:
-
-- if a chain forces you to use `ECDSA`, expect heavier protocols and more implementation complexity
-- if you can use `Schnorr`, threshold signing gets dramatically cleaner
-- if you use `EdDSA`, you mostly get Schnorr's algebraic benefits, but you still need careful nonce coordination
-
-This is why the modern protocol landscape looks the way it does.
-
-Threshold ECDSA systems tend to accumulate MtA, homomorphic encryption, proofs, presigning flows, and a larger implementation surface. Threshold Schnorr systems tend to look much more natural. Same custody goal. Very different mathematical starting point.
-
-## A Short Mental Model
-
-You can compress the whole article into three lines:
+Or even shorter:
 
 - `ECDSA`: the algebra fights you
 - `Schnorr`: the algebra helps you
 - `EdDSA`: the algebra helps you, but nonce handling still needs care
 
-That is the simplest explanation I know for why MPC wallet infrastructure can feel either surprisingly elegant or surprisingly painful.
+That is the simplest explanation I know for why some cryptographic wallet systems look surprisingly elegant and others look like they are held together by advanced math and careful prayer.
 
 ## Further Reading
 
