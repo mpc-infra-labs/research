@@ -2,7 +2,7 @@
 
 ## 0. Scope
 
-This note documents the motivation, design, experiment, and limits of the bridge prototype in this repository.
+This note documents the motivation, design, experiment, and limits of the bridge prototype.
 
 The central question is:
 
@@ -10,7 +10,7 @@ The central question is:
 
 The note covers:
 
-- why this bridge is useful in this project
+- why this bridge is useful
 - how Lockness and Synedrion differ in threshold support, refresh support, and HD-wallet semantics
 - why the bridge reduces to conversion between Shamir-style and additive share semantics
 - why local conversion is available for `n-of-n`
@@ -38,7 +38,7 @@ Synedrion is relevant for the opposite reason:
 
 The project therefore does **not** ask whether Synedrion should replace Lockness. The narrower question is whether Synedrion can be used only for the refresh step, with Lockness-compatible state on both sides of that step.
 
-That is the bridge problem addressed in this repository.
+That is the bridge problem addressed here.
 
 ---
 
@@ -58,7 +58,7 @@ In custody systems, this matters because child-wallet derivation is used for:
 - operational wallet organization
 - interoperability with HD-wallet tooling and recovery procedures
 
-Synedrion does contain explicit BIP32-related threshold-share code paths [R14][R15]. The issue in this project is narrower. Its derivation model is not treated here as a drop-in replacement for the seed-rooted custody semantics expected from the Lockness side. One reason is that the Synedrion BIP32 code itself contains a TODO asking whether deriving the initial chain code from public information is acceptable [R16].
+Synedrion does contain explicit BIP32-related threshold-share code paths [R14][R15]. The issue considered here is narrower. Its derivation model is not treated here as a drop-in replacement for the seed-rooted custody semantics expected from the Lockness side. One reason is that the Synedrion BIP32 code itself contains a TODO asking whether deriving the initial chain code from public information is acceptable [R16].
 
 That point matters for evaluation. A system can support signing and refresh while still failing to match the HD-wallet assumptions of the surrounding custody stack.
 
@@ -73,8 +73,8 @@ The bridge experiment is only well motivated if the two systems have complementa
 | Audit posture | Publicly documented as audited [R1] | Publicly documented as unaudited and work in progress [R3] |
 | Refresh | Public docs say refresh does not work for general-threshold key shares [R2] | Refresh is implemented [R3] |
 | Threshold support | Public docs state arbitrary threshold support was added to the library [R1] | Threshold support exists, but is exposed through `ThresholdKeyShare` and `KeyResharing`; Synedrion also states that threshold resharing is not part of CGGMP'24 proper [R3][R6][R7][R8] |
-| HD-wallet semantics | Publicly positioned as SLIP10-based and BIP32-compatible [R1][R4] | Has BIP32-related threshold-share support, but is not treated in this project as a substitute for Lockness-side custody derivation semantics; the BIP32 code path also notes a TODO about deriving the initial chain code from public information [R14][R15][R16] |
-| Role in this project | Operational anchor | Refresh engine |
+| HD-wallet semantics | Publicly positioned as SLIP10-based and BIP32-compatible [R1][R4] | Has BIP32-related threshold-share support, but is not treated here as a substitute for Lockness-side custody derivation semantics; the BIP32 code path also notes a TODO about deriving the initial chain code from public information [R14][R15][R16] |
+| Role in this note | Operational anchor | Refresh engine |
 
 Two limits should be stated explicitly.
 
@@ -108,7 +108,7 @@ First, Synedrion threshold support is real.
 
 Second, Synedrion itself documents threshold resharing as outside CGGMP'24 proper, even though the library includes it because threshold functionality needs it in practice [R3][R8].
 
-This helps explain the design choice in this project. Synedrion is used where its implemented refresh machinery is most useful, but the project does not assume that every threshold-state transition should be delegated to Synedrion as the long-term operational system.
+This helps explain the design choice used here. Synedrion is used where its implemented refresh machinery is most useful, but the design does not assume that every threshold-state transition should be delegated to Synedrion as the long-term operational system.
 
 ---
 
@@ -141,7 +141,7 @@ That is the minimal end-to-end test of whether signing authority survives the ro
 
 The main difficulty is not the transport format. The main difficulty is the meaning of the transported share.
 
-This repository uses a portable share container defined in the bridge code [R12]. The container carries data such as:
+The implementation uses a portable share container defined in the bridge code [R12]. The container carries data such as:
 
 - party index
 - threshold metadata
@@ -162,9 +162,9 @@ The bridge problem therefore has three steps:
 
 This is why the bridge is presented here as a conversion problem between Shamir-style and additive-style representations [R12][R13].
 
-### 6.1 Lockness-Compatible Side in This Project
+### 6.1 Lockness-Compatible Side in the Current Implementation
 
-In the current repository, the Lockness-compatible side is best described as Shamir/VSS-shaped threshold state.
+In the current implementation, the Lockness-compatible side is best described as Shamir/VSS-shaped threshold state.
 
 This is visible in the adapter code:
 
@@ -179,16 +179,16 @@ These are Shamir/VSS concepts rather than additive-share concepts. They refer to
 
 For that reason, the Lockness-compatible side is described here as Shamir-style threshold state.
 
-### 6.2 Synedrion Side in This Project
+### 6.2 Synedrion Side in the Current Implementation
 
-In the current repository, the Synedrion side is used in two different forms:
+In the current implementation, the Synedrion side is used in two different forms:
 
 - `ThresholdKeyShare` for threshold-holder-set logic
 - regular `KeyShare` for the signing and refresh path used by the bridge
 
 The threshold code in Synedrion indicates that `to_key_share()` multiplies by an interpolation coefficient and `from_key_share()` divides by that coefficient [R6]. In other words, regular `KeyShare` is the active-signer form obtained after selecting a signer subset and applying the corresponding Lagrange weighting.
 
-That is the point at which the bridge in this repository uses an additive interpretation:
+That is the point at which the bridge uses an additive interpretation:
 
 - on the Lockness-to-Synedrion path, the current full-set demo converts a portable Shamir share into an additive share before constructing a Synedrion `KeyShare` [R11][R13]
 - on the reverse path, the bridge converts the Synedrion-exported additive share back into a Shamir-style share before reconstructing the Lockness-compatible VSS state [R9][R10][R11][R13]
@@ -417,7 +417,7 @@ G(0) = g_1(0) + ... + g_n(0)
 
 The resulting shares are therefore Shamir shares on a single polynomial `G(x)` whose secret is still `s`.
 
-This is the resharing step that the current prototype does not implement at the bridge boundary, even though the repository keeps a generic interactive `additive_portable_to_shamir_portable(...)` helper for that direction [R11][R13].
+This is the resharing step that the current prototype does not implement at the bridge boundary, even though the code keeps a generic interactive `additive_portable_to_shamir_portable(...)` helper for that direction [R11][R13].
 
 ---
 
@@ -442,13 +442,13 @@ This does **not** imply that threshold bridge is impossible. It only means:
 - `n-of-n` is the local case
 - `t-of-n` with `t < n` is the interactive case
 
-The current repository implements the local case [R11].
+The current implementation covers the local case [R11].
 
 ---
 
 ## 12. What the Prototype Implements
 
-The Lockness-compatible side is represented in the repository by the CGGMP24-compatible bridge path. Synedrion is used for refresh [R9][R10][R11].
+The Lockness-compatible side is represented in the prototype implementation by the CGGMP24-compatible bridge path. Synedrion is used for refresh [R9][R10][R11].
 
 The implemented end-to-end flow is:
 
@@ -464,7 +464,7 @@ The implemented end-to-end flow is:
 
 The current implementation runs this in the full-set case so that the bridge conversion itself remains local [R11].
 
-This is the implemented result of the current project.
+This is the implemented result of the current prototype.
 
 ---
 
@@ -488,7 +488,7 @@ The main costs are:
 - ongoing merge and maintenance burden
 - weaker interoperability claims, because the result depends on patched upstream code
 
-For those reasons, the current project did not use the fork-first path as the main strategy.
+For those reasons, the implementation did not use the fork-first path as the main strategy.
 
 ### 13.2 Strategy B: JSON / Serde Adapter Layer
 
@@ -541,7 +541,7 @@ This is less robust than a typed public bridge API.
 
 #### Debugging overhead
 
-Several hard failures in this project were adapter failures rather than cryptographic failures, including:
+Several hard failures during development were adapter failures rather than cryptographic failures, including:
 
 - type mismatch between `u16` and verifier wrapper types
 - incomplete public-share lists
@@ -549,7 +549,7 @@ Several hard failures in this project were adapter failures rather than cryptogr
 
 ### 13.4 Why JSON Was Still Used
 
-The JSON strategy still has one main advantage in this project:
+The JSON strategy still has one main advantage here:
 
 - it tests bridge feasibility against the libraries as they currently exist
 
@@ -559,7 +559,7 @@ This makes the result closer to an interoperability test than a result that depe
 
 ## 14. What the Prototype Does Not Implement
 
-The current repository does **not** implement a full threshold bridge protocol at the bridge boundary.
+The current implementation does **not** implement a full threshold bridge protocol at the bridge boundary.
 
 In particular, it does not add a bridge-stage protocol for:
 
@@ -571,7 +571,7 @@ The current result must therefore be read with care.
 
 ### 14.1 Implemented and Demonstrated
 
-The current project implements the following end-to-end flow:
+The current implementation covers the following end-to-end flow:
 
 - Lockness-compatible key generation
 - signing before the bridge
@@ -581,7 +581,7 @@ The current project implements the following end-to-end flow:
 - conversion back into Lockness-compatible state
 - signing again after the round trip
 
-These steps correspond to the main bridge flow and supporting conversion helpers in the current repository [R9][R10][R11][R13].
+These steps correspond to the main bridge flow and supporting conversion helpers in the prototype implementation [R9][R10][R11][R13].
 
 ### 14.2 Reported Outcome of the Current Experiment
 
@@ -598,7 +598,7 @@ This reported outcome is narrower than a production claim. It is a statement abo
 
 ### 14.3 Theoretical but Not Implemented Here
 
-The following claim is theoretical rather than implemented in this repository:
+The following claim is theoretical rather than implemented in the current prototype:
 
 - a threshold bridge with `t < n` should be possible in principle
 
@@ -608,7 +608,7 @@ Making that claim operational would require the bridge layer itself to become in
 
 ## 15. Production Implications
 
-The repository implements, and the current experiment reports, a local bridge in the full-set case. This is not the same as a production-ready threshold bridge.
+The implementation covers, and the current experiment reports, a local bridge in the full-set case. This is not the same as a production-ready threshold bridge.
 
 The main production implications are the following.
 
@@ -658,9 +658,9 @@ That is the conclusion supported by the current implementation.
 
 The two systems address different parts of the operational problem.
 
-Lockness is used as the operational anchor in this project, but it does not provide the refresh path needed here [R1][R2]. Synedrion provides refresh, but the public documentation gives it a weaker production trust posture, and its threshold path relies on resharing machinery outside CGGMP'24 proper [R3][R6][R7][R8].
+Lockness is used as the operational anchor in this design, but it does not provide the refresh path needed here [R1][R2]. Synedrion provides refresh, but the public documentation gives it a weaker production trust posture, and its threshold path relies on resharing machinery outside CGGMP'24 proper [R3][R6][R7][R8].
 
-Those differences motivate the narrower bridge experiment in this repository.
+Those differences motivate the narrower bridge experiment described in this note.
 
 In the reported full-set experiment, a Lockness-originated signing authority:
 
@@ -668,7 +668,7 @@ In the reported full-set experiment, a Lockness-originated signing authority:
 - moved back into Lockness-compatible state
 - continued to sign in a full-set bridge configuration
 
-This statement refers to the full-set bridge flow implemented in the repository [R11][R13].
+This statement refers to the full-set bridge flow implemented in the prototype implementation [R11][R13].
 
 The next step, if needed, is not a new mathematical primitive. It is implementation of the bridge itself as a threshold resharing participant [R8][R11].
 
@@ -700,20 +700,15 @@ The next step, if needed, is not a new mathematical primitive. It is implementat
 - [R8] Synedrion key resharing protocol.  
   <https://github.com/entropyxyz/synedrion/blob/master/src/protocols/key_resharing.rs>
 
-- [R9] Current project Lockness bridge adapter.  
-  [src/bridge/cggmp.rs](./src/bridge/cggmp.rs)
+- [R9] Lockness bridge adapter used by the prototype. Local code inspection: `src/bridge/cggmp.rs`.
 
-- [R10] Current project Synedrion bridge adapter.  
-  [src/bridge/synedrion.rs](./src/bridge/synedrion.rs)
+- [R10] Synedrion bridge adapter used by the prototype. Local code inspection: `src/bridge/synedrion.rs`.
 
-- [R11] Current project main bridge flow.  
-  [src/main.rs](./src/main.rs)
+- [R11] Main bridge flow used by the prototype. Local code inspection: `src/main.rs`.
 
-- [R12] Current project portable share type.  
-  [src/bridge/common.rs](./src/bridge/common.rs)
+- [R12] Portable share type used by the prototype. Local code inspection: `src/bridge/common.rs`.
 
-- [R13] Current project share-conversion logic.  
-  [src/bridge/core.rs](./src/bridge/core.rs)
+- [R13] Share-conversion logic used by the prototype. Local code inspection: `src/bridge/core.rs`.
 
 - [R14] Synedrion public library docs: `bip32` feature enables BIP32 support for `ThresholdKeyShare`.  
   <https://github.com/entropyxyz/synedrion/blob/master/src/lib.rs>
