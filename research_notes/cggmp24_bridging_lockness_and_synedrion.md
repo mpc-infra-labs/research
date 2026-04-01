@@ -700,15 +700,20 @@ The next step, if needed, is not a new mathematical primitive. It is implementat
 - [R8] Synedrion key resharing protocol.  
   <https://github.com/entropyxyz/synedrion/blob/master/src/protocols/key_resharing.rs>
 
-- [R9] Lockness bridge adapter used by the prototype. Local code inspection: `src/bridge/cggmp.rs`.
+- [R9] Lockness bridge adapter used by the prototype.  
+  <https://github.com/mpc-infra-labs/threshold-key-bridge-prototype/blob/main/src/bridge/cggmp.rs>
 
-- [R10] Synedrion bridge adapter used by the prototype. Local code inspection: `src/bridge/synedrion.rs`.
+- [R10] Synedrion bridge adapter used by the prototype.  
+  <https://github.com/mpc-infra-labs/threshold-key-bridge-prototype/blob/main/src/bridge/synedrion.rs>
 
-- [R11] Main bridge flow used by the prototype. Local code inspection: `src/main.rs`.
+- [R11] Main bridge flow used by the prototype.  
+  <https://github.com/mpc-infra-labs/threshold-key-bridge-prototype/blob/main/src/main.rs>
 
-- [R12] Portable share type used by the prototype. Local code inspection: `src/bridge/common.rs`.
+- [R12] Portable share type used by the prototype.  
+  <https://github.com/mpc-infra-labs/threshold-key-bridge-prototype/blob/main/src/bridge/common.rs>
 
-- [R13] Share-conversion logic used by the prototype. Local code inspection: `src/bridge/core.rs`.
+- [R13] Share-conversion logic used by the prototype.  
+  <https://github.com/mpc-infra-labs/threshold-key-bridge-prototype/blob/main/src/bridge/core.rs>
 
 - [R14] Synedrion public library docs: `bip32` feature enables BIP32 support for `ThresholdKeyShare`.  
   <https://github.com/entropyxyz/synedrion/blob/master/src/lib.rs>
