@@ -2,152 +2,146 @@
 
 ## 0. Scope
 
-This note explains why this project exists, what it demonstrates, and what it does not demonstrate.
+This note documents the motivation, design, experiment, and limits of the bridge prototype in this repository.
 
-The main question is:
+The central question is:
 
-> Can Synedrion be used only for key refresh, while Lockness remains the main operational system?
+> Can Synedrion be used for key refresh while Lockness remains the operational system used before and after refresh?
 
-This note focuses on:
+The note covers:
 
-- the practical reason to attempt this bridge
-- the capability differences between Lockness and Synedrion
-- the bridge problem as a secret-sharing conversion problem
-- why `n-of-n` bridge can be local
-- why `t-of-n` bridge needs interaction when `t < n`
-- what this project implemented and tested
-- what the production implications are
+- why this bridge is useful in this project
+- how Lockness and Synedrion differ in threshold support, refresh support, and HD-wallet semantics
+- why the bridge reduces to conversion between Shamir-style and additive share semantics
+- why local conversion is available for `n-of-n`
+- why `t-of-n` with `t < n` requires interaction
+- what the current prototype implements
+- what the result does and does not imply for production
 
-This note does not try to be a full survey of threshold cryptography.
-
----
-
-## 1. Why This Project Exists
-
-This project starts from an operational mismatch.
-
-Lockness is the more trusted system in this setting because the public Lockness CGGMP implementation has been audited, and because it is closer to the production system this project wants to preserve.[R1] At the same time, public Lockness documentation also says that key refresh does not work for general-threshold key shares.[R2]
-
-Synedrion is attractive for the opposite reason. It explicitly implements key refresh and auxiliary-info refresh.[R3] But Synedrion also states that the library is still a work in progress, has not been audited, and should be used at the user's own risk.[R3]
-
-So the motivation is not "replace Lockness with Synedrion." The motivation is narrower:
-
-- keep Lockness as the trusted operational anchor
-- use Synedrion for the refresh capability that is missing on the Lockness side
-- return to a Lockness-compatible signing state after refresh
-
-This is the bridge problem.
+The note is not a full survey of threshold ECDSA or CGGMP-family protocols.
 
 ---
 
-## 2. Why BIP32 and Child-Wallet Derivation Matter
+## 1. Problem Statement
 
-This project also treats HD-wallet semantics as a real product requirement.
+The project starts from an operational mismatch between two systems.
 
-Public Lockness documentation says its HD-wallet support is based on SLIP10 and is compatible with BIP32-style workflows.[R1][R4] The separate Lockness `hd-wallet` repository also documents SLIP10-based derivation from a seed to a master extended key, followed by child derivation along a path.[R4] This is aligned with the standard SLIP-0010 / BIP32 extended-key model, where:
+Lockness is used here as the operational anchor. Two public facts matter:
+
+- the Lockness CGGMP implementation is documented as audited [R1]
+- the Lockness refresh API documentation states that refresh does not work for general-threshold key shares [R2]
+
+Synedrion is relevant for the opposite reason:
+
+- its README lists refresh protocols as implemented [R3]
+- the same README states that the library is unaudited, work in progress, and should be used at the user's own risk [R3]
+
+The project therefore does **not** ask whether Synedrion should replace Lockness. The narrower question is whether Synedrion can be used only for the refresh step, with Lockness-compatible state on both sides of that step.
+
+That is the bridge problem addressed in this repository.
+
+---
+
+## 2. Why HD-Wallet Semantics Matter
+
+This project treats HD-wallet semantics as a custody requirement rather than an optional feature.
+
+Public Lockness documentation states that its HD-wallet support is based on SLIP10 and is compatible with BIP32-style workflows [R1][R4]. The public `hd-wallet` repository also documents derivation from seed to master extended key, then along a derivation path [R4]. This matches the SLIP-0010 model in which:
 
 - the master secret and master chain code come from the seed
-- non-hardened child derivation uses the parent chain code, parent public key, and child index[R5]
+- non-hardened child derivation uses the parent chain code, parent public key, and child index [R5]
 
-In this project, that matters because child-wallet derivation is important in custody systems. It is used for:
+In custody systems, this matters because child-wallet derivation is used for:
 
-- many deposit addresses under one root
-- account separation without repeated key ceremonies
+- address fan-out under one root
+- account separation
 - operational wallet organization
-- integration with existing HD-wallet tooling
+- interoperability with HD-wallet tooling and recovery procedures
 
-For that reason, HD-wallet semantics are part of the system comparison, not an optional feature.
-å
-The concern on the Synedrion side is not that it has no derivation code at all. It does have BIP32-related code paths for threshold shares.[R6][R7] The concern is that, in this project, its derivation model is not trusted as a drop-in replacement for the seed-rooted custody semantics expected from the Lockness side.
+Synedrion does contain explicit BIP32-related threshold-share code paths [R14][R15]. The issue in this project is narrower. Its derivation model is not treated here as a drop-in replacement for the seed-rooted custody semantics expected from the Lockness side. One reason is that the Synedrion BIP32 code itself contains a TODO asking whether deriving the initial chain code from public information is acceptable [R16].
 
-So even if Synedrion can refresh keys, that does not automatically make it acceptable as a full custody replacement.
+That point matters for evaluation. A system can support signing and refresh while still failing to match the HD-wallet assumptions of the surrounding custody stack.
 
 ---
 
 ## 3. Capability Comparison
 
-The bridge experiment is rational only if the two systems have complementary strengths and weaknesses.
+The bridge experiment is only well motivated if the two systems have complementary properties.
 
 | Topic | Lockness side | Synedrion side |
 |---|---|---|
-| Audit status | Publicly documented as audited.[R1] | Publicly documented as unaudited and work in progress.[R3] |
-| Refresh | Public docs say refresh does not work for general-threshold key shares.[R2] | Refresh is implemented and is a main feature.[R3] |
-| Threshold support | Public docs say arbitrary threshold support was added to the library.[R1] | Threshold support exists, but uses `ThresholdKeyShare` and `KeyResharing`, and Synedrion says resharing is not part of CGGMP'24 proper.[R3][R6][R7][R8] |
-| HD-wallet semantics | Publicly positioned as SLIP10-based and BIP32-compatible.[R1][R4] | Has BIP32-related threshold-share support, but this project does not treat it as a full substitute for Lockness-side custody derivation semantics.[R6][R7] |
+| Audit posture | Publicly documented as audited [R1] | Publicly documented as unaudited and work in progress [R3] |
+| Refresh | Public docs say refresh does not work for general-threshold key shares [R2] | Refresh is implemented [R3] |
+| Threshold support | Public docs state arbitrary threshold support was added to the library [R1] | Threshold support exists, but is exposed through `ThresholdKeyShare` and `KeyResharing`; Synedrion also states that threshold resharing is not part of CGGMP'24 proper [R3][R6][R7][R8] |
+| HD-wallet semantics | Publicly positioned as SLIP10-based and BIP32-compatible [R1][R4] | Has BIP32-related threshold-share support, but is not treated in this project as a substitute for Lockness-side custody derivation semantics; the BIP32 code path also notes a TODO about deriving the initial chain code from public information [R14][R15][R16] |
 | Role in this project | Operational anchor | Refresh engine |
 
-Two clarifications are important.
+Two limits should be stated explicitly.
 
-First, this table does **not** mean that Lockness solves every threshold problem out of the box. Public Lockness documentation explicitly says refresh does not work for general-threshold keys.[R2]
+First, the Lockness side is not presented here as solving every threshold problem. Its own refresh documentation states a limitation for general-threshold key shares [R2].
 
-Second, this table does **not** mean that Synedrion lacks threshold support. It does support threshold workflows. But in Synedrion the threshold path is exposed through extra threshold-specific machinery such as `ThresholdKeyShare`, conversion between threshold and regular shares, and `KeyResharing`.[R6][R7][R8]
-
-That distinction is important for this project.
+Second, the Synedrion side is not presented here as lacking threshold support. Threshold support is present, but it is exposed through an additional threshold-specific layer rather than only through the ordinary `KeyShare` path [R6][R7][R8].
 
 ---
 
 ## 4. What Threshold Support Means in Synedrion
 
-It is easy to use the word "share" too loosely. Synedrion has a real distinction between:
+Synedrion distinguishes between `KeyShare` and `ThresholdKeyShare` [R6].
 
-- `KeyShare`
-- `ThresholdKeyShare`
-
-These are not the same object.[R6]
-
-A regular `KeyShare` is the object used directly by the ordinary signing and refresh flow. A `ThresholdKeyShare` is a threshold-aware object that carries:
+A regular `KeyShare` is used directly in ordinary signing and refresh. A `ThresholdKeyShare` carries threshold-holder-set metadata such as:
 
 - share IDs
 - public shares
 - threshold metadata
-- threshold-specific transformations such as `to_key_share()` and `from_key_share()`[R6]
+- transformations such as `to_key_share()` and `from_key_share()` [R6]
 
-The Synedrion threshold test makes the intended flow explicit.[R7] In that test:
+The threshold test in Synedrion makes the intended flow explicit [R7]:
 
-1. an initial active signing set runs key generation
-2. the resulting regular `KeyShare`s are converted into `ThresholdKeyShare`
-3. `KeyResharing` distributes threshold shares to a wider holder set
-4. later, a selected threshold subset converts back to regular signing shares and signs
+1. an active signer set runs key generation
+2. the resulting `KeyShare`s are converted into `ThresholdKeyShare`
+3. `KeyResharing` redistributes to a wider threshold holder set
+4. a selected subset later converts back to regular `KeyShare` form and signs
 
-This means Synedrion threshold support is real, but it is not just "run the normal protocol and you automatically have arbitrary threshold support for every holder configuration." There is an additional threshold layer.
+This matters for two reasons.
 
-Synedrion's own README is consistent with this. It lists "Threshold Key Resharing" separately and says it is not part of CGGMP'24 proper, even though it is needed to enable threshold functionality in practice.[R3]
+First, Synedrion threshold support is real.
 
-This is one of the reasons the bridge experiment is reasonable:
+Second, Synedrion itself documents threshold resharing as outside CGGMP'24 proper, even though the library includes it because threshold functionality needs it in practice [R3][R8].
 
-- Lockness is the trusted operational side
-- Synedrion has the refresh machinery
-- Synedrion threshold support exists, but with more protocol surface and a weaker trust story
-
-That makes "use Synedrion only for refresh" a reasonable thing to test.
+This helps explain the design choice in this project. Synedrion is used where its implemented refresh machinery is most useful, but the project does not assume that every threshold-state transition should be delegated to Synedrion as the long-term operational system.
 
 ---
 
-## 5. The Bridge Goal
+## 5. Bridge Objective
 
-The bridge is not just a format conversion.
+The bridge is not only a serialization problem.
 
 The bridge must preserve:
 
 - the same underlying signing authority
 - the same public key
-- therefore the same externally visible wallet identity
+- the same externally visible wallet identity
 
-In Ethereum terms, the strongest easy check is the address derived from the public key.
+On Ethereum, one practical external check is the address derived from the public key.
 
-So the real bridge question is:
+For that reason, the experiment is not just "export and import shares". The experiment is:
 
-> Can the same signing authority start on the Lockness side, move into Synedrion for refresh, move back, and still produce valid signatures under the same public key?
+1. generate a distributed key
+2. sign before the bridge
+3. refresh across the bridge
+4. sign again
+5. bridge back
+6. sign again on the original operational side
 
-That is why the experiment is "DKG, sign, refresh, bridge back, sign again" rather than just "serialize and deserialize shares."
+That is the minimal end-to-end test of whether signing authority survives the round trip [R11].
 
 ---
 
-## 6. Why the Bridge Reduces to Secret-Sharing Conversion
+## 6. Why the Bridge Reduces to Share-Semantics Conversion
 
-The core problem is not Rust structs. The core problem is the meaning of the shares.
+The main difficulty is not the transport format. The main difficulty is the meaning of the transported share.
 
-This project uses a portable share container. That container carries:
+This repository uses a portable share container defined in the bridge code [R12]. The container carries data such as:
 
 - party index
 - threshold metadata
@@ -155,20 +149,78 @@ This project uses a portable share container. That container carries:
 - scalar share
 - public key metadata
 
-But the container is only a transport format. It is not itself a cryptographic scheme.
+The container is not itself a secret-sharing scheme. The same container can hold data that is interpreted as:
 
-The same container can represent:
+- a Shamir-style threshold share
+- an additive-style active-signer share
 
-- a Shamir share
-- an additive share
+The bridge problem therefore has three steps:
 
-So the bridge problem is:
+1. identify the share semantics at the source boundary
+2. identify the share semantics expected at the destination boundary
+3. convert without changing the underlying secret
 
-1. identify what secret-sharing form the source side is using at the bridge boundary
-2. identify what secret-sharing form the destination side expects
-3. convert between the two without changing the underlying secret
+This is why the bridge is presented here as a conversion problem between Shamir-style and additive-style representations [R12][R13].
 
-This is why the bridge reduces to additive-vs-Shamir conversion.
+### 6.1 Lockness-Compatible Side in This Project
+
+In the current repository, the Lockness-compatible side is best described as Shamir/VSS-shaped threshold state.
+
+This is visible in the adapter code:
+
+- the bridge reads threshold information from `core.vss_setup.min_signers` [R9]
+- the bridge reconstructs VSS commitments and public shares when converting back into the Lockness-compatible object model [R9]
+
+These are Shamir/VSS concepts rather than additive-share concepts. They refer to:
+
+- a threshold value
+- a polynomial commitment structure
+- public shares attached to evaluation points
+
+For that reason, the Lockness-compatible side is described here as Shamir-style threshold state.
+
+### 6.2 Synedrion Side in This Project
+
+In the current repository, the Synedrion side is used in two different forms:
+
+- `ThresholdKeyShare` for threshold-holder-set logic
+- regular `KeyShare` for the signing and refresh path used by the bridge
+
+The threshold code in Synedrion indicates that `to_key_share()` multiplies by an interpolation coefficient and `from_key_share()` divides by that coefficient [R6]. In other words, regular `KeyShare` is the active-signer form obtained after selecting a signer subset and applying the corresponding Lagrange weighting.
+
+That is the point at which the bridge in this repository uses an additive interpretation:
+
+- on the Lockness-to-Synedrion path, the current full-set demo converts a portable Shamir share into an additive share before constructing a Synedrion `KeyShare` [R11][R13]
+- on the reverse path, the bridge converts the Synedrion-exported additive share back into a Shamir-style share before reconstructing the Lockness-compatible VSS state [R9][R10][R11][R13]
+
+This note does **not** claim that one library is globally additive and the other is globally Shamir in every internal phase. The narrower statement is:
+
+- the Lockness-compatible boundary used here is Shamir/VSS-shaped
+- the Synedrion boundary used here for signing and refresh is the additive-style active-signer form
+
+That is the mismatch the bridge has to cross.
+
+### 6.3 Why Two CGGMP-Family Implementations Can Differ
+
+Both systems are in the same CGGMP paper family, but that does not force them to expose the same software boundary objects.
+
+The paper family specifies protocol families such as:
+
+- key generation
+- signing
+- refresh
+- security properties in the protocol model
+
+It does not force every implementation to expose the same API boundary between:
+
+- stored threshold state
+- active signer state
+- holder-set resharing objects
+- HD-wallet derivation objects
+
+Synedrion makes this especially clear because its own documentation states that threshold resharing is not part of CGGMP'24 proper, even though it is implemented in the library because threshold functionality needs it in practice [R3][R8].
+
+The difference between the two implementations is therefore not evidence of contradiction. It is evidence that the implementations place their software boundaries differently.
 
 ---
 
@@ -189,11 +241,11 @@ Here:
 - `s` is the secret
 - `w_i` is the share held by party `i`
 
-The secret appears only when the additive shares are combined.
+The secret is recovered by combining the additive shares.
 
 ### 7.2 Shamir Sharing
 
-In Shamir sharing, the secret is encoded as the value at zero of a polynomial:
+In Shamir sharing, the secret is the value at zero of a polynomial:
 
 ```text
 f(x) = s + a_1 x + a_2 x^2 + ... + a_{t-1} x^{t-1}
@@ -203,7 +255,7 @@ Here:
 
 - `s` is the secret
 - `a_1, ..., a_{t-1}` are random coefficients
-- the degree is at most `t - 1`
+- the polynomial degree is at most `t - 1`
 
 Party `i` receives:
 
@@ -221,9 +273,9 @@ Any `t` points determine a polynomial of degree at most `t - 1`, so any `t` shar
 
 ---
 
-## 8. Why `n-of-n` Bridge Can Be Local
+## 8. Local Conversion in the Full-Set Case
 
-This section explains the design choice in the current prototype.
+The current prototype starts with the full-set case because local conversion is available there.
 
 Assume the source state is additive:
 
@@ -231,9 +283,9 @@ Assume the source state is additive:
 s = w_1 + w_2 + ... + w_n
 ```
 
-Suppose the target is an `n-of-n` Shamir-style representation over the fixed participant set `{1, 2, ..., n}`.
+Assume the target is an `n-of-n` Shamir-style representation over the fixed participant set `{1, 2, ..., n}`.
 
-For that full set, the Lagrange reconstruction formula at zero is:
+For that full set, reconstruction at zero has the form:
 
 ```text
 s = λ_1 x_1 + λ_2 x_2 + ... + λ_n x_n
@@ -242,16 +294,9 @@ s = λ_1 x_1 + λ_2 x_2 + ... + λ_n x_n
 Here:
 
 - `x_i` is the new share for party `i`
-- `λ_i` is the Lagrange coefficient for party `i` with respect to the full participant set
+- `λ_i` is the public Lagrange coefficient for party `i` with respect to the full set
 
-The key fact is that `λ_i` is public. It depends only on:
-
-- the participant indices
-- the target reconstruction point `0`
-
-It does not depend on secret data.
-
-So each party can define its new share locally as:
+Because `λ_i` depends only on public indices, each party can define:
 
 ```text
 x_i = w_i / λ_i
@@ -266,41 +311,37 @@ Then:
 = s
 ```
 
-This means:
+This gives three immediate consequences:
 
-- party `i` only needs its own `w_i`
-- party `i` only needs the public coefficient `λ_i`
+- party `i` needs only its own `w_i`
+- party `i` needs only the public coefficient `λ_i`
 - party `i` does not need any other party's secret share
 
-That is why `n-of-n` bridge can be local.
-
-This is the reason the current prototype starts with a full-set experiment.
+That is why the full-set bridge can be local, and why the current prototype begins with `n-of-n` [R11][R13].
 
 ---
 
-## 9. Why Threshold Bridge Requires Interaction
+## 9. Why Threshold Conversion Requires Interaction
 
-This is the case `t-of-n` with `t < n`.
+The case `t-of-n` with `t < n` is different.
 
-The point here is not that threshold bridge is impossible. The point is that threshold bridge is not local.
+The claim here is not that threshold bridge is impossible. The claim is that threshold bridge is not local.
 
-Assume again that the source state is additive:
+Assume again:
 
 ```text
 s = w_1 + w_2 + ... + w_n
 ```
 
-Now suppose we want new shares such that any subset of size `t` can recover the secret.
-
-Assume, for contradiction, that the conversion is local:
+Suppose we try to convert locally:
 
 ```text
 x_i = g_i(w_i)
 ```
 
-That means each new share depends only on the corresponding old share.
+This means each new share depends only on its corresponding old share.
 
-Now pick a threshold subset `T` of size `t`. If the new shares inside `T` can recover the secret, then the recovered value depends only on `{w_i : i in T}`.
+Now choose a threshold subset `T` of size `t`. If the new shares inside `T` can recover the secret, then the recovered value depends only on the set `{w_i : i in T}`.
 
 But the actual secret is:
 
@@ -308,13 +349,11 @@ But the actual secret is:
 s = sum over all i of w_i
 ```
 
-If `t < n`, there is some party `k` not in `T`. Changing `w_k` changes the secret, but it does not change any `x_i` inside `T`, because each `x_i` depends only on the local input `w_i`.
+If `t < n`, then there exists some party `k` not in `T`. Changing `w_k` changes `s`, but it does not change any `x_i` with `i in T`, because each `x_i` depends only on its own local input.
 
-That is a contradiction.
+This is a contradiction.
 
-So when `t < n`, a threshold bridge cannot be purely local.
-
-Some information from parties outside the final signing subset must enter the new shares. That is exactly why communication is needed.
+Therefore, when `t < n`, threshold bridge cannot be purely local. Information from parties outside the final signing subset must enter the new shares. That is the reason interaction is required.
 
 ---
 
@@ -322,25 +361,27 @@ Some information from parties outside the final signing subset must enter the ne
 
 In the threshold case, each party must distribute its contribution across the future holder set.
 
-Party `i` treats its additive share `w_i` as the constant term of a fresh random polynomial:
+Party `i` uses its additive share `w_i` as the constant term of a fresh random polynomial:
 
 ```text
 g_i(x) = w_i + b_{i,1} x + b_{i,2} x^2 + ... + b_{i,t-1} x^{t-1}
 ```
 
-This guarantees:
+Then:
 
 ```text
 g_i(0) = w_i
 ```
 
-Party `i` does **not** send the whole polynomial. That would reveal `w_i` by evaluation at zero.
+Party `i` does **not** send the whole polynomial, because that would reveal `w_i` by evaluation at zero.
 
-Instead, party `i` sends to party `j` only the point value:
+Instead, party `i` sends only:
 
 ```text
 g_i(j)
 ```
+
+to party `j`.
 
 Party `j` receives:
 
@@ -354,7 +395,7 @@ and forms:
 x_j = g_1(j) + g_2(j) + ... + g_n(j)
 ```
 
-Now define the total polynomial:
+Define the global polynomial:
 
 ```text
 G(x) = g_1(x) + g_2(x) + ... + g_n(x)
@@ -374,52 +415,46 @@ G(0) = g_1(0) + ... + g_n(0)
      = s
 ```
 
-So the resulting shares are Shamir shares on a single global polynomial `G(x)` whose secret is still `s`.
+The resulting shares are therefore Shamir shares on a single polynomial `G(x)` whose secret is still `s`.
 
-This is the threshold resharing step that the current prototype does not implement at the bridge layer.
+This is the resharing step that the current prototype does not implement at the bridge boundary, even though the repository keeps a generic interactive `additive_portable_to_shamir_portable(...)` helper for that direction [R11][R13].
 
 ---
 
-## 11. Why the Current Prototype Starts with `n-of-n`
+## 11. Why the Prototype Starts with `n-of-n`
 
-The prototype starts with the local case because it isolates the bridge question.
+The prototype is organized around the local case because that isolates the bridge question from the resharing question.
 
-The actual question is not:
+The question addressed by the current prototype is:
 
-> Can threshold bridge ever exist?
+> Can the project build a useful refresh bridge without adding another interactive resharing protocol at the bridge boundary?
 
-The actual question is:
+The cleanest test case for that question is `n-of-n`.
 
-> Can this project get a useful refresh bridge without adding another interactive resharing protocol at the bridge boundary?
+In the full-set case:
 
-If the answer is yes, the cleanest test case is `n-of-n`.
+- the bridge conversion stays local
+- the bridge does not add a new communication protocol
+- the experiment isolates whether signing authority survives the round trip
 
-In that case:
+This does **not** imply that threshold bridge is impossible. It only means:
 
-- the bridge conversion can stay local
-- the bridge does not need to introduce a new communication protocol
-- the experiment can focus on whether signing authority survives the round trip
+- `n-of-n` is the local case
+- `t-of-n` with `t < n` is the interactive case
 
-This does **not** mean threshold bridge is impossible.
-
-It means:
-
-- `n-of-n` bridge is the local case
-- `t-of-n` bridge is the interactive case
-
-The current prototype implements the local case.
+The current repository implements the local case [R11].
 
 ---
 
 ## 12. What the Prototype Implements
 
-In this project, the Lockness side is represented by the CGGMP24-compatible path in the codebase. Synedrion is used for refresh.
+The Lockness-compatible side is represented in the repository by the CGGMP24-compatible bridge path. Synedrion is used for refresh [R9][R10][R11].
 
-The implemented experiment is:
+The implemented end-to-end flow is:
 
 1. generate a distributed key on the Lockness-compatible side
 2. sign a transaction before the bridge
-3. export to the portable format
+3. export to portable form
 4. convert into Synedrion-compatible state
 5. run Synedrion refresh
 6. sign again on the Synedrion side
@@ -427,71 +462,175 @@ The implemented experiment is:
 8. convert back into Lockness-compatible state
 9. sign again on the Lockness-compatible side
 
-In the current implementation, this is done in the full-set case so that the bridge conversion itself remains local.
+The current implementation runs this in the full-set case so that the bridge conversion itself remains local [R11].
 
-This is the current project result.
+This is the implemented result of the current project.
 
 ---
 
-## 13. What the Prototype Does Not Yet Implement
+## 13. Integration Strategies Considered
 
-The current prototype does **not** implement a full threshold bridge protocol at the bridge boundary.
+Development considered two implementation strategies.
 
-In particular, it does not yet add an extra bridge-stage protocol for:
+### 13.1 Strategy A: Fork or Clone the Upstream Library
+
+Strategy A is:
+
+- clone the upstream library
+- expose private constructors or fields
+- add bridge-specific helper methods inside the upstream code
+
+The main benefit is tighter access to internal types.
+
+The main costs are:
+
+- dependence on a modified fork
+- ongoing merge and maintenance burden
+- weaker interoperability claims, because the result depends on patched upstream code
+
+For those reasons, the current project did not use the fork-first path as the main strategy.
+
+### 13.2 Strategy B: JSON / Serde Adapter Layer
+
+The implemented bridge uses a JSON-based adapter layer [R9][R10][R11].
+
+The pattern is:
+
+- serialize upstream objects into JSON-like values
+- extract or patch the required fields
+- deserialize into the destination object model
+
+This appears in the bridge code on both sides [R9][R10][R11]. Examples include:
+
+- extracting Lockness-compatible secret-share and threshold metadata from serialized fields
+- constructing Synedrion `KeyShare` through JSON because the exact public constructor needed by the bridge is not exposed
+- patching `public` share lists and ID types through JSON round-trips
+
+This avoids maintaining a fork, but it introduces its own risks.
+
+### 13.3 Problems Introduced by the JSON Strategy
+
+The JSON strategy creates at least five classes of risk.
+
+#### Schema fragility
+
+The bridge depends on field names and serialized layout. Upstream serialization changes can break the bridge even if the cryptographic meaning of the library has not changed.
+
+#### Invariant bypass
+
+Rebuilding objects from JSON bypasses private constructors and internal invariants. An object may deserialize successfully while still violating intended library invariants.
+
+#### Semantic ambiguity
+
+The same portable container can hold either:
+
+- a Shamir-style share
+- an additive-style share
+
+JSON does not enforce that distinction. The meaning depends on surrounding context. This was a recurrent source of confusion during development.
+
+#### Manual patching burden
+
+The project must manually patch:
+
+- public-share lists
+- ID types
+- commitment-related metadata when rebuilding the Lockness-compatible side
+
+This is less robust than a typed public bridge API.
+
+#### Debugging overhead
+
+Several hard failures in this project were adapter failures rather than cryptographic failures, including:
+
+- type mismatch between `u16` and verifier wrapper types
+- incomplete public-share lists
+- stale metadata after transitions between additive-style and Shamir-style interpretations
+
+### 13.4 Why JSON Was Still Used
+
+The JSON strategy still has one main advantage in this project:
+
+- it tests bridge feasibility against the libraries as they currently exist
+
+This makes the result closer to an interoperability test than a result that depends on a patched upstream fork.
+
+---
+
+## 14. What the Prototype Does Not Implement
+
+The current repository does **not** implement a full threshold bridge protocol at the bridge boundary.
+
+In particular, it does not add a bridge-stage protocol for:
 
 - threshold resharing
 - VSS-style consistency checks
 - holder-set transition logic across the bridge boundary
 
-So the current result should be read carefully.
+The current result must therefore be read with care.
 
-### 13.1 Implemented and demonstrated
+### 14.1 Implemented and Demonstrated
 
-The current project demonstrates:
+The current project implements the following end-to-end flow:
 
 - Lockness-compatible key generation
-- signing before bridge
+- signing before the bridge
 - conversion into Synedrion-compatible state
-- key refresh inside Synedrion
+- refresh inside Synedrion
 - signing after refresh
 - conversion back into Lockness-compatible state
 - signing again after the round trip
 
-### 13.2 Theoretical but not implemented in this prototype
+These steps correspond to the main bridge flow and supporting conversion helpers in the current repository [R9][R10][R11][R13].
 
-The following statement is theoretical, not yet an implementation claim:
+### 14.2 Reported Outcome of the Current Experiment
 
-- a threshold bridge with `t < n` should also be possible in principle
+The project run summarized by this note reported success for the full-set flow listed above:
 
-But to turn that into an implemented result, the bridge layer itself must become interactive.
+- key generation on the Lockness-compatible side
+- signing before the bridge
+- refresh on the Synedrion side
+- signing after refresh
+- conversion back into Lockness-compatible state
+- signing again after the round trip
+
+This reported outcome is narrower than a production claim. It is a statement about the current full-set experiment.
+
+### 14.3 Theoretical but Not Implemented Here
+
+The following claim is theoretical rather than implemented in this repository:
+
+- a threshold bridge with `t < n` should be possible in principle
+
+Making that claim operational would require the bridge layer itself to become interactive.
 
 ---
 
-## 14. What This Means for Production
+## 15. Production Implications
 
-The experiment shows a feasible local bridge in the full-set case. That is a meaningful result. But it is not the same thing as a production-ready threshold bridge.
+The repository implements, and the current experiment reports, a local bridge in the full-set case. This is not the same as a production-ready threshold bridge.
 
-The main production implications are:
+The main production implications are the following.
 
-### 14.1 The bridge increases the trusted surface
+### 15.1 Trusted Surface Expansion
 
-If the bridge service sees enough share material to perform both directions of conversion, the trusted computing base gets larger.
+If the bridge process sees enough share material to perform both directions of conversion, the trusted computing base becomes larger.
 
-Even if the code never explicitly reconstructs the full private key in one variable, a central conversion process may still occupy a role that is much closer to key reconstruction than a normal MPC node should.
+Even if the code never explicitly reconstructs the full private key in a single variable, a central conversion service may still occupy a role much closer to key reconstruction than a normal MPC node should.
 
-### 14.2 `n-of-n` is simpler but weaker operationally
+### 15.2 Operational Cost of `n-of-n`
 
-The full-set case avoids bridge-side resharing, but it has costs:
+The full-set case avoids bridge-side resharing, but it also removes threshold liveness properties:
 
 - all parties must be present
 - liveness is worse
 - fault tolerance disappears
 
-So `n-of-n` is easier for the bridge, but not automatically better for the product.
+`n-of-n` is therefore simpler for the bridge, but not automatically better for the product.
 
-### 14.3 HD-wallet semantics remain a production concern
+### 15.3 HD-Wallet Semantics Remain Relevant
 
-Even if the bridge preserves signing ability, that is not the only production invariant.
+Even if the bridge preserves signing ability, signing ability is not the only production invariant.
 
 Custody systems also care about:
 
@@ -500,38 +639,38 @@ Custody systems also care about:
 - audit boundaries
 - wallet-identity semantics under existing tooling
 
-This is why the BIP32 / SLIP10 discussion belongs in the evaluation.
+For that reason, the BIP32 / SLIP10 discussion is part of the evaluation rather than an unrelated side topic.
 
-### 14.4 Threshold bridge is still a valid future direction
+### 15.4 Threshold Bridge Remains a Valid Direction
 
-This project should not be read as a proof against threshold bridge.
+The project should not be read as a claim against threshold bridge.
 
-It should be read as:
+The current result is narrower:
 
-- a proof that local bridge is possible in the full-set case
-- a statement that threshold bridge requires a larger protocol implementation
+- the local full-set case is implementable
+- the threshold case requires a larger bridge protocol
 
-That is a narrower and more accurate conclusion.
+That is the conclusion supported by the current implementation.
 
 ---
 
-## 15. Bottom Line
+## 16. Conclusion
 
-This project is reasonable because the two systems solve different parts of the operational problem.
+The two systems address different parts of the operational problem.
 
-Lockness provides the stronger operational trust anchor in this setting, but not the refresh path needed here.[R1][R2] Synedrion provides refresh, but with a weaker production trust story and a threshold path that relies on extra resharing machinery outside CGGMP'24 proper.[R3][R6][R7][R8]
+Lockness is used as the operational anchor in this project, but it does not provide the refresh path needed here [R1][R2]. Synedrion provides refresh, but the public documentation gives it a weaker production trust posture, and its threshold path relies on resharing machinery outside CGGMP'24 proper [R3][R6][R7][R8].
 
-That makes a narrow bridge experiment worth doing.
+Those differences motivate the narrower bridge experiment in this repository.
 
-The current prototype shows:
+In the reported full-set experiment, a Lockness-originated signing authority:
 
-- a Lockness-originated signing authority can be moved into Synedrion for refresh
-- moved back again
-- and still used for signing
+- moved into Synedrion for refresh
+- moved back into Lockness-compatible state
+- continued to sign in a full-set bridge configuration
 
-in a full-set bridge configuration.
+This statement refers to the full-set bridge flow implemented in the repository [R11][R13].
 
-The next step, if needed, is not a new mathematical idea. It is to implement the bridge itself as a threshold resharing participant.
+The next step, if needed, is not a new mathematical primitive. It is implementation of the bridge itself as a threshold resharing participant [R8][R11].
 
 ---
 
@@ -560,3 +699,27 @@ The next step, if needed, is not a new mathematical idea. It is to implement the
 
 - [R8] Synedrion key resharing protocol.  
   <https://github.com/entropyxyz/synedrion/blob/master/src/protocols/key_resharing.rs>
+
+- [R9] Current project Lockness bridge adapter.  
+  [src/bridge/cggmp.rs](./src/bridge/cggmp.rs)
+
+- [R10] Current project Synedrion bridge adapter.  
+  [src/bridge/synedrion.rs](./src/bridge/synedrion.rs)
+
+- [R11] Current project main bridge flow.  
+  [src/main.rs](./src/main.rs)
+
+- [R12] Current project portable share type.  
+  [src/bridge/common.rs](./src/bridge/common.rs)
+
+- [R13] Current project share-conversion logic.  
+  [src/bridge/core.rs](./src/bridge/core.rs)
+
+- [R14] Synedrion public library docs: `bip32` feature enables BIP32 support for `ThresholdKeyShare`.  
+  <https://github.com/entropyxyz/synedrion/blob/master/src/lib.rs>
+
+- [R15] Synedrion threshold-share BIP32 derivation code.  
+  <https://github.com/entropyxyz/synedrion/blob/master/src/entities/threshold.rs>
+
+- [R16] Synedrion BIP32 helper code, including TODO about deriving the initial chain code from public information.  
+  <https://github.com/entropyxyz/synedrion/blob/master/src/curve/bip32.rs>
